@@ -1,7 +1,21 @@
-from langchain_community.chat_message_histories import SQLChatMessageHistory
+import os
+from langchain_postgres import PostgresChatMessageHistory
+from psycopg_pool import AsyncConnectionPool
 
-def get_session_history(user_id):
-    return SQLChatMessageHistory(
-        session_id=user_id,
-        connection_string="sqlite:///chat_history.db"
-    )
+DB_URL = os.getenv("SUPABASE_DB_URL")
+
+pool = AsyncConnectionPool(
+    conninfo=DB_URL, 
+    max_size=20,
+    kwargs={
+        "prepare_threshold": None
+    }
+)
+
+async def get_session_history(session_id: str):
+    async with pool.connection() as conn:
+        return PostgresChatMessageHistory(
+            "chat_history",
+            session_id,
+            async_connection=conn,
+        )

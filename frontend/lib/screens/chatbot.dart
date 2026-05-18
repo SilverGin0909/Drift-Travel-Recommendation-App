@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/services/location_service.dart';
-import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_markdown_stream/flutter_markdown_stream.dart';
+import 'dart:math' as math;
 
 class Chatbot extends StatefulWidget {
   const Chatbot({super.key});
@@ -36,29 +37,50 @@ class Chatbot_State extends State<Chatbot> {
     try {
       Position? position = await LocationService.determinePosition();
 
-      final response = await http.post(
-        Uri.parse(backendUrl),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "user_id": userID,
-          "message": text,
-          "user_lat": position?.latitude,
-          "user_lng": position?.longitude,
-        }),
-      );
+      final request = http.Request('POST', Uri.parse(backendUrl));
+      request.headers['Content-Type'] = 'application/json';
+      request.body = jsonEncode({
+        "user_id": userID,
+        "message": text,
+        "user_lat": position?.latitude,
+        "user_lng": position?.longitude,
+      });
+
+      // Use .send() to get a StreamedResponse
+      final response = await http.Client().send(request);
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        String botReply = data['reply'];
-
+        // Hide the thinking indicator and add an empty bubble for the AI
         setState(() {
-          _messages.add({"role": "bot", "text": botReply});
           _isTyping = false;
+          _messages.add({"role": "bot", "text": ""});
         });
+
+        int botIndex = _messages.length - 1;
+
+        // Listen to the stream chunk by chunk
+        await for (var line
+            in response.stream
+                .transform(utf8.decoder)
+                .transform(const LineSplitter())) {
+          if (line.startsWith('data: ')) {
+            // Remove 'data: ' and decode the inner JSON
+            final data = jsonDecode(line.substring(6));
+
+            if (data.containsKey('text')) {
+              setState(() {
+                // Append the new token to the existing text
+                _messages[botIndex]["text"] =
+                    _messages[botIndex]["text"]! + data['text'];
+              });
+            }
+          }
+        }
       } else {
-        throw Exception("Server error");
+        throw Exception("Server error: ${response.statusCode}");
       }
     } catch (e) {
+      debugPrint("Stream Error: $e");
       setState(() {
         _messages.add({
           "role": "bot",
@@ -163,21 +185,23 @@ class Chatbot_State extends State<Chatbot> {
           ),
 
           // 2. MAIN CONTENT
-          SafeArea(
-            child: Column(
-              children: [
-                _buildHeader(),
-                // Center Title Section
-                Expanded(
-                  child: _messages.isEmpty
-                      ? _buildWelcomeScreen()
-                      : _buildChatList(),
-                ),
+          Column(
+            children: [
+              SafeArea(bottom: false, child: _buildHeader()),
 
-                // Bottom Input Card
-                _buildBottomInputArea(context),
-              ],
-            ),
+              Expanded(
+                child: _messages.isEmpty
+                    ? _buildWelcomeScreen()
+                    : _buildChatList(),
+              ),
+            ],
+          ),
+
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: _buildBottomInputArea(context),
           ),
         ],
       ),
@@ -309,86 +333,96 @@ class Chatbot_State extends State<Chatbot> {
 
   // --- Bottom Input Area Widget ---
   Widget _buildBottomInputArea(BuildContext context) {
-    final TextEditingController inputController = TextEditingController();
-
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.all(20),
-      padding: const EdgeInsets.only(top: 10, bottom: 20, left: 20, right: 20),
+      // The "Cover" effect: Gradient from transparent to solid white
+      padding: const EdgeInsets.fromLTRB(
+        16,
+        40,
+        16,
+        20,
+      ), // Top padding for the fade
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FB), // Very light grey/white
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
-        ],
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white.withValues(alpha: 0.0),
+            Colors.white.withValues(alpha: 0.9),
+            Colors.white,
+          ],
+          stops: const [0.0, 0.4, 1.0],
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Text Input Placeholder
-          TextField(
-            controller: _inputController,
-            onSubmitted: _handleSend,
-            decoration: InputDecoration(
-              hintText: "Initiate a query or send a command to the AI...",
-              hintStyle: TextStyle(color: Colors.black87, fontSize: 14),
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.zero,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF0F4F9), // Subtle Gemini-style grey
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 1. Text Input Area
+            TextField(
+              controller: _inputController,
+              onSubmitted: _handleSend,
+              maxLines: 3,
+              minLines: 1,
+              decoration: const InputDecoration(
+                hintText: "Ask Drift...",
+                hintStyle: TextStyle(color: Colors.black54, fontSize: 15),
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+              ),
             ),
-            maxLines: 2, // Allow slight expansion
-            minLines: 1,
-          ),
+            const SizedBox(height: 12),
 
-          const SizedBox(height: 20),
+            // 2. Actions Row
+            Row(
+              children: [
+                // Keeping your Preferences Pill
+                _buildPillButton(Icons.person_outline, "Preferences"),
 
-          // Buttons Row
-          Row(
-            children: [
-              _buildPillButton(Icons.person_outline, "Preferences"),
-              const Spacer(),
-              // Send Button
-              Container(
-                width: 36,
-                height: 36,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 4,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: IconButton(
-                  padding: EdgeInsets.zero,
-                  alignment: Alignment.center,
-                  icon: Transform.translate(
-                    offset: const Offset(2, -1),
-                    child: Transform.rotate(
-                      angle: -45 * (math.pi / 180),
-                      child: const Icon(
-                        Icons.send_rounded,
-                        color: Color(0xFF6155F5),
-                        size: 20,
+                const Spacer(),
+
+                // Keeping your exact Send Button Design
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 4,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: Transform.translate(
+                      offset: const Offset(2, -1),
+                      child: Transform.rotate(
+                        angle: -45 * (math.pi / 180),
+                        child: const Icon(
+                          Icons.send_rounded,
+                          color: Color(0xFF6155F5),
+                          size: 20,
+                        ),
                       ),
                     ),
+                    onPressed: () {
+                      _handleSend(_inputController.text);
+                      _inputController.clear();
+                    },
                   ),
-                  onPressed: () {
-                    _handleSend(_inputController.text);
-                    inputController.clear();
-                  },
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -427,53 +461,129 @@ class Chatbot_State extends State<Chatbot> {
     );
   }
 
+  Widget _buildThinkingIndicator() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Drift",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.3, end: 0.8),
+              duration: const Duration(milliseconds: 1000),
+              builder: (context, value, child) {
+                return Opacity(
+                  opacity: value,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFF6155F5), // Matching your theme blue
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        "Searching KL for you...",
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildChatList() {
     return ListView.builder(
       controller: _scrollController,
       physics: const ClampingScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 180),
       itemCount: _messages.length + (_isTyping ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == _messages.length) {
-          return const Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: EdgeInsetsGeometry.all(8.0),
-              child: Text(
-                "Drift is thinking...",
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-              ),
-            ),
-          );
+          return _buildThinkingIndicator();
         }
 
         final msg = _messages[index];
         final isUser = msg["role"] == "user";
 
-        return Align(
-          alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 5),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: isUser ? const Color(0xFF6155F5) : Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: isUser ? null : Border.all(color: Colors.black12),
-              boxShadow: [
-                if (!isUser)
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 5,
-                  ),
-              ],
-            ),
-            child: Text(
-              msg["text"]!,
-              style: TextStyle(
-                color: isUser ? Colors.white : Colors.black87,
-                fontSize: 14,
+        // 1. USER STYLE: THE BUBBLE
+        if (isUser) {
+          return Align(
+            alignment: Alignment.centerRight,
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.75,
+              ),
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6155F5), // Your theme blue
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Text(
+                msg["text"] ?? "",
+                style: const TextStyle(color: Colors.white, fontSize: 14),
               ),
             ),
+          );
+        }
+
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectionArea(
+                child: MarkdownBody(
+                  data: msg["text"] ?? "",
+                  styleSheet: MarkdownStyleSheet(
+                    p: const TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w400,
+                    ),
+                    strong: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                    h3: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      height: 1.5,
+                    ),
+                    h3Padding: const EdgeInsets.only(top: 20),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+            ],
           ),
         );
       },

@@ -1,4 +1,5 @@
 import logging
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 from langchain.tools import tool
 from langchain_core.runnables.history import RunnableWithMessageHistory
@@ -64,7 +65,6 @@ def kl_destinations_search(query: str, user_lat: float, user_lng: float, categor
             )
             formatted_results.append(place_info)
 
-        # Join all the places together with a clear separator
         return "\n\n---\n\n".join(formatted_results)
     
     except Exception as e:
@@ -111,10 +111,44 @@ prompt = ChatPromptTemplate.from_messages([
 agent = create_tool_calling_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
-# Export this object for main.py to use
-agent_with_memory = RunnableWithMessageHistory(
-    agent_executor,
-    get_session_history,
-    input_messages_key="input",
-    history_messages_key="chat_history",
-)
+async def agent_with_manual_history(user_message: str, user_id: str, prefs_context: str):
+    """
+    Orchestrates the Async History flow:
+    1. Fetches history from Postgres.
+    2. Runs Agent with history injected.
+    3. Saves response back to Postgres.
+    """
+    full_response = ""
+
+    history_manager = await get_session_history(user_id)
+    old_messages = await history_manager.aget_messages()
+
+    async for event in agent_executor.astream_events(
+        {
+            "input": user_message,
+            "chat_history": old_messages,
+            "user_preferences": prefs_context
+        },
+        version="v2"
+    ):
+        kind = event["event"]
+        
+        if kind == "on_chat_model_stream":
+            content = event["data"]["chunk"].content
+
+            token_text = ""
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and "text" in item:
+                        token_text += item["text"]
+            else:
+                token_text = str(content)
+
+            if token_text:
+                full_response += token_text
+                yield token_text
+
+    await history_manager.aadd_messages([
+        HumanMessage(content=user_message),
+        AIMessage(content=full_response)
+    ])
