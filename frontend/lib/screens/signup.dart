@@ -1,3 +1,4 @@
+import 'package:frontend/screens/chatbot.dart';
 import 'package:frontend/screens/login.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -244,6 +245,7 @@ class SignupPage_State extends State<SignupPage> {
       final response = await Supabase.instance.client.auth.signUp(
         email: email.text.trim(),
         password: password.text.trim(),
+        data: {'username': username.text.trim()},
       );
 
       if (mounted) Navigator.pop(context);
@@ -258,7 +260,7 @@ class SignupPage_State extends State<SignupPage> {
         );
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const LoginPage()),
+          MaterialPageRoute(builder: (context) => const Chatbot()),
         );
       }
     } catch (e) {

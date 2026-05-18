@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_markdown_stream/flutter_markdown_stream.dart';
+import 'package:image_picker/image_picker.dart';
 import 'dart:math' as math;
 
 class Chatbot extends StatefulWidget {
@@ -20,6 +21,98 @@ class Chatbot_State extends State<Chatbot> {
 
   final List<Map<String, String>> _messages = [];
   bool _isTyping = false;
+
+  String _userName = "Loading...";
+  String _avatarUrl = "https://i.pravatar.cc/150?img=5";
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserData();
+  }
+
+  Future<void> _fetchUserData() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        // Assuming your table is named 'profiles'
+        final data = await Supabase.instance.client
+            .from('user_preferences')
+            .select('username, avatar_url')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        if (data != null && mounted) {
+          setState(() {
+            _userName = data['username'] ?? "User";
+            _avatarUrl = data['avatar_url'] ?? _avatarUrl;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching user data: $e");
+      if (mounted) {
+        setState(() => _userName = "User"); // Fallback if fetch fails
+      }
+    }
+  }
+
+  // 4. Handle Image Picking and Uploading
+  Future<void> _changeProfilePicture() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+
+      // Pick image from gallery
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800, // Compress slightly
+        imageQuality: 80,
+      );
+
+      if (image == null) return; // User canceled
+
+      // Read bytes for upload
+      final bytes = await image.readAsBytes();
+      final fileExt = image.name.split('.').last;
+      final fileName =
+          '${user.id}-${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+
+      // Upload to Supabase Storage (bucket name: 'avatars')
+      await Supabase.instance.client.storage
+          .from('avatars')
+          .uploadBinary(fileName, bytes);
+
+      // Get the public URL of the uploaded image
+      final String publicUrl = Supabase.instance.client.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+
+      // Update the profiles table with the new URL
+      await Supabase.instance.client
+          .from('user_preferences')
+          .update({'avatar_url': publicUrl})
+          .eq('id', user.id);
+
+      // Update UI
+      if (mounted) {
+        setState(() {
+          _avatarUrl = publicUrl;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Profile picture updated!")),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error uploading image: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to update picture.")),
+        );
+      }
+    }
+  }
 
   Future<void> _handleSend(String text) async {
     if (text.trim().isEmpty) return;
@@ -108,6 +201,7 @@ class Chatbot_State extends State<Chatbot> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white, // Base background
+      drawer: _buildSideMenu(),
       body: Stack(
         children: [
           // 1. BACKGROUND GLOW EFFECTS
@@ -218,9 +312,15 @@ class Chatbot_State extends State<Chatbot> {
           Expanded(
             child: Align(
               alignment: Alignment.centerLeft,
-              child: IconButton(
-                icon: const Icon(Icons.menu, color: Colors.black87),
-                onPressed: () {},
+              child: Builder(
+                builder: (context) {
+                  return IconButton(
+                    icon: const Icon(Icons.menu, color: Colors.black87),
+                    onPressed: () {
+                      Scaffold.of(context).openDrawer();
+                    },
+                  );
+                },
               ),
             ),
           ),
@@ -242,19 +342,19 @@ class Chatbot_State extends State<Chatbot> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Hi, Gin',
-                        style: TextStyle(
+                        'Hi, $_userName', // Using dynamic name
+                        style: const TextStyle(
                           fontSize: 10,
                           color: Colors.black,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      Text(
+                      const Text(
                         'Welcome Back',
                         style: TextStyle(
                           fontSize: 10,
@@ -265,18 +365,194 @@ class Chatbot_State extends State<Chatbot> {
                     ],
                   ),
                   const SizedBox(width: 10),
-                  const CircleAvatar(
-                    radius: 15,
-                    backgroundColor: Colors.grey,
-                    backgroundImage: NetworkImage(
-                      'https://i.pravatar.cc/150?img=5',
-                    ), // Placeholder Avatar
+                  // Wrap Avatar in a GestureDetector
+                  GestureDetector(
+                    onTap: _changeProfilePicture, // Trigger upload on tap
+                    child: CircleAvatar(
+                      radius: 15,
+                      backgroundColor: Colors.grey[200],
+                      backgroundImage: NetworkImage(
+                        _avatarUrl,
+                      ), // Using dynamic URL
+                    ),
                   ),
                 ],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSideMenu() {
+    return Drawer(
+      backgroundColor: const Color(0xFFF8F9FB), // Very light grey, feels modern
+      elevation: 0,
+      shape: const RoundedRectangleBorder(
+        // Only round the right side where it slides out
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 1. BRANDING & NEW TRIP BUTTON
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    height: 44, // Keeps it compact
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(
+                        alpha: 0.05,
+                      ), // Subtle grey
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: TextField(
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.black87,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: "Search trips...",
+                        hintStyle: TextStyle(
+                          color: Colors.black54,
+                          fontSize: 14,
+                        ),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: Colors.black54,
+                          size: 20,
+                        ),
+                        border: InputBorder.none,
+                        // contentPadding aligns the text perfectly with the prefix icon
+                        contentPadding: EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onChanged: (query) {
+                        // TODO: Filter your _buildHistoryItem list based on this query
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // The prominent action button
+                  InkWell(
+                    onTap: () {
+                      // TODO: Clear messages, start a fresh session
+                      Navigator.pop(context); // Closes the drawer
+                    },
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 16,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6155F5), // Your theme blue
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.add, color: Colors.white, size: 20),
+                          SizedBox(width: 12),
+                          Text(
+                            "Plan a New Trip",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Text(
+                "Recent Itineraries",
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black45,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+
+            // 2. CHAT HISTORY LIST
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                children: [
+                  _buildHistoryItem("KL Weekend Food Tour", isActive: true),
+                  _buildHistoryItem("Penang Layover", isActive: false),
+                  _buildHistoryItem("Sightseeing near KLCC", isActive: false),
+                ],
+              ),
+            ),
+
+            // 3. BOTTOM SETTINGS
+            const Divider(height: 1, color: Colors.black12),
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 8,
+              ),
+              leading: const Icon(
+                Icons.settings_outlined,
+                color: Colors.black54,
+              ),
+              title: const Text(
+                "Settings & Preferences",
+                style: TextStyle(fontSize: 14, color: Colors.black87),
+              ),
+              onTap: () {},
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Helper widget for the history list items
+  Widget _buildHistoryItem(String title, {required bool isActive}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        color: isActive
+            ? Colors.black.withValues(alpha: 0.05)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        dense: true,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        leading: Icon(
+          Icons.chat_bubble_outline,
+          size: 18,
+          color: isActive ? const Color(0xFF6155F5) : Colors.black54,
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+            color: isActive ? Colors.black87 : Colors.black54,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        onTap: () {
+          // TODO: Load this chat thread from Supabase
+        },
       ),
     );
   }
