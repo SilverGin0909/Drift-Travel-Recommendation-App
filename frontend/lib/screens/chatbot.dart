@@ -15,14 +15,18 @@ import 'package:frontend/widgets/side_menu.dart';
 import 'package:frontend/widgets/welcome_screen.dart';
 import 'package:frontend/widgets/thinking_indicator.dart';
 
+import 'package:frontend/services/api_service.dart';
+import 'package:frontend/services/user_service.dart';
+import 'package:frontend/widgets/chat_bubbles.dart';
+
 class Chatbot extends StatefulWidget {
   const Chatbot({super.key});
 
   @override
-  State<Chatbot> createState() => Chatbot_State();
+  State<Chatbot> createState() => ChatbotState();
 }
 
-class Chatbot_State extends State<Chatbot> {
+class ChatbotState extends State<Chatbot> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -47,11 +51,7 @@ class Chatbot_State extends State<Chatbot> {
       if (user == null) return;
 
       // 1. FETCH PROFILE DETAILS (Fixes the "Loading..." issue)
-      final profileData = await Supabase.instance.client
-          .from('user_preferences')
-          .select('username, avatar_url')
-          .eq('id', user.id)
-          .maybeSingle();
+      final profileData = await UserService.fetchProfileDetails(user.id);
 
       if (profileData != null && mounted) {
         setState(() {
@@ -61,13 +61,7 @@ class Chatbot_State extends State<Chatbot> {
         });
       }
 
-      final existingSessions = await Supabase.instance.client
-          .from('chat_sessions')
-          .select('id')
-          .eq('user_id', user.id)
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
+      final existingSessions = await UserService.fetchLatestSession(user.id);
 
       if (existingSessions != null && mounted) {
         setState(() {
@@ -101,27 +95,7 @@ class Chatbot_State extends State<Chatbot> {
 
       if (image == null) return; // User canceled
 
-      // Read bytes for upload
-      final bytes = await image.readAsBytes();
-      final fileExt = image.name.split('.').last;
-      final fileName =
-          '${user.id}-${DateTime.now().millisecondsSinceEpoch}.$fileExt';
-
-      // Upload to Supabase Storage (bucket name: 'avatars')
-      await Supabase.instance.client.storage
-          .from('avatars')
-          .uploadBinary(fileName, bytes);
-
-      // Get the public URL of the uploaded image
-      final String publicUrl = Supabase.instance.client.storage
-          .from('avatars')
-          .getPublicUrl(fileName);
-
-      // Update the profiles table with the new URL
-      await Supabase.instance.client
-          .from('user_preferences')
-          .update({'avatar_url': publicUrl})
-          .eq('id', user.id);
+      final publicUrl = await UserService.uploadProfilePicture(user.id, image);
 
       // Update UI
       if (mounted) {
@@ -159,17 +133,13 @@ class Chatbot_State extends State<Chatbot> {
     try {
       Position? position = await LocationService.determinePosition();
 
-      final request = http.Request('POST', Uri.parse(backendUrl));
-      request.headers['Content-Type'] = 'application/json';
-      request.body = jsonEncode({
-        "user_id": userID,
-        "session_id": _currentSessionId ?? "",
-        "message": text,
-        "user_lat": position?.latitude,
-        "user_lng": position?.longitude,
-      });
-
-      final response = await http.Client().send(request);
+      final response = await ApiService.sendChatMessage(
+        userID: userID,
+        sessionId: _currentSessionId,
+        text: text,
+        lat: position?.latitude,
+        lng: position?.longitude,
+      );
 
       if (response.statusCode == 200) {
         setState(() {
@@ -237,11 +207,7 @@ class Chatbot_State extends State<Chatbot> {
 
   Future<void> _loadChatMessages(String sessionId) async {
     try {
-      final messagesData = await Supabase.instance.client
-          .from('chat_messages')
-          .select('role, content')
-          .eq('session_id', sessionId)
-          .order('created_at', ascending: true);
+      final messagesData = await UserService.fetchChatMessages(sessionId);
 
       if (mounted) {
         setState(() {
@@ -337,61 +303,10 @@ class Chatbot_State extends State<Chatbot> {
 
         // 1. USER STYLE: THE BUBBLE
         if (isUser) {
-          return Align(
-            alignment: Alignment.centerRight,
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.75,
-              ),
-              margin: const EdgeInsets.symmetric(vertical: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF6155F5), // Your theme blue
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Text(
-                msg["text"] ?? "",
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-              ),
-            ),
-          );
+          return UserMessageBubble(text: msg["text"] ?? "");
         }
 
-        return Container(
-          width: double.infinity,
-          margin: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SelectionArea(
-                child: MarkdownBody(
-                  data: msg["text"] ?? "",
-                  styleSheet: MarkdownStyleSheet(
-                    p: const TextStyle(
-                      fontSize: 14,
-                      height: 1.5,
-                      color: Colors.black87,
-                      fontWeight: FontWeight.w400,
-                    ),
-                    strong: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                    ),
-                    h3: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      height: 1.5,
-                    ),
-                    h3Padding: const EdgeInsets.only(top: 30),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-            ],
-          ),
-        );
+        return BotMessageBubble(text: msg["text"] ?? "");
       },
     );
   }
