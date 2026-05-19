@@ -111,42 +111,72 @@ prompt = ChatPromptTemplate.from_messages([
 agent = create_tool_calling_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
-async def agent_with_manual_history(user_message: str, user_id: str, prefs_context: str):
+async def agent_with_manual_history(
+    user_message: str, 
+    session_id: str, 
+    prefs_context: str, 
+    user_lat: float = None, 
+    user_lng: float = None
+):
     """
     Orchestrates the Async History flow:
     1. Fetches history from Postgres.
-    2. Runs Agent with history injected.
-    3. Saves response back to Postgres.
+    2. Dynamically injects latitude and longitude into the system prompt framework.
+    3. Runs Agent with history injected.
+    4. Saves clean message response back to Postgres.
     """
     full_response = ""
 
-    history_manager = await get_session_history(user_id)
+    history_manager = await get_session_history(session_id)
     old_messages = await history_manager.aget_messages()
 
-    async for event in agent_executor.astream_events(
-        {
-            "input": user_message,
-            "chat_history": old_messages,
-            "user_preferences": prefs_context
-        },
-        version="v2"
-    ):
-        kind = event["event"]
-        
-        if kind == "on_chat_model_stream":
-            content = event["data"]["chunk"].content
+    lat_str = str(user_lat) if user_lat is not None else "0.0"
+    lng_str = str(user_lng) if user_lng is not None else "0.0"
+    
+    formatted_system_message = system_message.replace("{{user_lat}}", lat_str).replace("{{user_lng}}", lng_str)
 
-            token_text = ""
-            if isinstance(content, list):
-                for item in content:
-                    if isinstance(item, dict) and "text" in item:
-                        token_text += item["text"]
-            else:
-                token_text = str(content)
+    runtime_prompt = ChatPromptTemplate.from_messages([
+        ("system", formatted_system_message),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{input}"),
+        MessagesPlaceholder(variable_name="agent_scratchpad"),
+    ])
 
-            if token_text:
-                full_response += token_text
-                yield token_text
+    runtime_agent = create_tool_calling_agent(llm, tools, runtime_prompt)
+    runtime_executor = AgentExecutor(agent=runtime_agent, tools=tools, verbose=True)
+
+    async def execute_stream():
+        nonlocal full_response
+        async for event in runtime_executor.astream_events(
+            {
+                "input": user_message,
+                "chat_history": old_messages,
+                "user_preferences": prefs_context
+            },
+            version="v2"
+        ):
+            kind = event["event"]
+            if kind == "on_chat_model_stream":
+                content = event["data"]["chunk"].content
+
+                token_text = ""
+                if isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict) and "text" in item:
+                            token_text += item["text"]
+                else:
+                    token_text = str(content)
+
+                if token_text:
+                    full_response += token_text
+                    yield token_text
+
+    async def for_yield():
+        async for token in execute_stream():
+            yield token
+
+    async for token in for_yield():
+        yield token
 
     await history_manager.aadd_messages([
         HumanMessage(content=user_message),

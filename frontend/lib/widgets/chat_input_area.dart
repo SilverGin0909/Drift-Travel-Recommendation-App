@@ -3,11 +3,13 @@ import 'dart:math' as math;
 
 class ChatInputArea extends StatelessWidget {
   final TextEditingController inputController;
+  final bool isSending;
   final ValueChanged<String> onSend;
 
   const ChatInputArea({
     super.key,
     required this.inputController,
+    required this.isSending,
     required this.onSend,
   });
 
@@ -38,7 +40,8 @@ class ChatInputArea extends StatelessWidget {
           children: [
             TextField(
               controller: inputController,
-              onSubmitted: onSend,
+              onSubmitted: isSending ? null : onSend,
+              enabled: !isSending,
               maxLines: 3,
               minLines: 1,
               decoration: const InputDecoration(
@@ -67,24 +70,37 @@ class ChatInputArea extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: Transform.translate(
-                      offset: const Offset(2, -1),
-                      child: Transform.rotate(
-                        angle: -45 * (math.pi / 180),
-                        child: const Icon(
-                          Icons.send_rounded,
-                          color: Color(0xFF6155F5),
-                          size: 20,
+                  child: isSending
+                      ? const Padding(
+                          padding: EdgeInsets.all(10.0),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Color(0xFF6155F5), // Custom theme purple/blue
+                            ),
+                          ),
+                        )
+                      : IconButton(
+                          padding: EdgeInsets.zero,
+                          icon: Transform.translate(
+                            offset: const Offset(2, -1),
+                            child: Transform.rotate(
+                              angle: -45 * (math.pi / 180),
+                              child: const Icon(
+                                Icons.send_rounded,
+                                color: Color(
+                                  0xFF6155F5,
+                                ), // Custom theme purple/blue
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                          onPressed: () {
+                            if (inputController.text.trim().isNotEmpty) {
+                              onSend(inputController.text);
+                            }
+                          },
                         ),
-                      ),
-                    ),
-                    onPressed: () {
-                      onSend(inputController.text);
-                      inputController.clear();
-                    },
-                  ),
                 ),
               ],
             ),
@@ -112,7 +128,11 @@ class ChatInputArea extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: const Color(0xFF6155F5)),
+          Icon(
+            icon,
+            size: 16,
+            color: const Color(0xFF6155F5),
+          ), // Custom theme purple/blue
           const SizedBox(width: 6),
           Text(
             label,

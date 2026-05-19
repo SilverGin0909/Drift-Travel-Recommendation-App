@@ -1,7 +1,102 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-class SideMenu extends StatelessWidget {
-  const SideMenu({super.key});
+class SideMenu extends StatefulWidget {
+  final String? currentSessionId;
+  final Function(String) onSessionSelected;
+  final VoidCallback onNewSessionCreated;
+  final String userName;
+  final String avatarUrl;
+  final VoidCallback onChangeProfilePicture;
+
+  const SideMenu({
+    super.key,
+    required this.currentSessionId,
+    required this.onSessionSelected,
+    required this.onNewSessionCreated,
+    required this.userName,
+    required this.avatarUrl,
+    required this.onChangeProfilePicture,
+  });
+
+  @override
+  State<SideMenu> createState() => _SideMenuState();
+}
+
+class _SideMenuState extends State<SideMenu> {
+  List<Map<String, dynamic>> _allSessions = [];
+  List<Map<String, dynamic>> _filteredSessions = [];
+  bool _isLoading = true;
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchSessions();
+  }
+
+  Future<void> _fetchSessions() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+
+      final data = await Supabase.instance.client
+          .from('chat_sessions')
+          .select('id, title, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false);
+
+      if (mounted) {
+        setState(() {
+          _allSessions = List<Map<String, dynamic>>.from(data);
+          _filteredSessions = _allSessions;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching sessions: $e");
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _filterSessions(String query) {
+    setState(() {
+      if (query.trim().isEmpty) {
+        _filteredSessions = _allSessions;
+      } else {
+        _filteredSessions = _allSessions
+            .where(
+              (session) => session['title'].toString().toLowerCase().contains(
+                query.toLowerCase(),
+              ),
+            )
+            .toList();
+      }
+    });
+  }
+
+  Future<void> _createNewSession() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+
+      final newSession = await Supabase.instance.client
+          .from('chat_sessions')
+          .insert({
+            'user_id': user.id,
+            'title': 'New Trip ${DateTime.now().day}/${DateTime.now().month}',
+          })
+          .select('id')
+          .single();
+
+      widget.onNewSessionCreated();
+      widget.onSessionSelected(newSession['id']);
+
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      debugPrint("Error creating new session: $e");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +122,7 @@ class SideMenu extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: TextField(
+                      controller: _searchController,
                       style: const TextStyle(
                         fontSize: 14,
                         color: Colors.black87,
@@ -45,17 +141,12 @@ class SideMenu extends StatelessWidget {
                         border: InputBorder.none,
                         contentPadding: EdgeInsets.symmetric(vertical: 12),
                       ),
-                      onChanged: (query) {
-                        // TODO: Filter your _buildHistoryItem list based on this query
-                      },
+                      onChanged: _filterSessions,
                     ),
                   ),
                   const SizedBox(height: 24),
                   InkWell(
-                    onTap: () {
-                      // TODO: Clear messages, start a fresh session
-                      Navigator.pop(context); // Closes the drawer
-                    },
+                    onTap: _createNewSession,
                     borderRadius: BorderRadius.circular(16),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
@@ -85,6 +176,8 @@ class SideMenu extends StatelessWidget {
                 ],
               ),
             ),
+
+            // Sub-Label
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: Text(
@@ -97,31 +190,95 @@ class SideMenu extends StatelessWidget {
                 ),
               ),
             ),
+
+            // Middle: Scrollable History Selection Stream
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filteredSessions.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      child: Text(
+                        "No itineraries found.",
+                        style: TextStyle(color: Colors.black38),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      itemCount: _filteredSessions.length,
+                      itemBuilder: (context, index) {
+                        final session = _filteredSessions[index];
+                        final bool isActive =
+                            session['id'] == widget.currentSessionId;
+                        return _buildHistoryItem(
+                          session['id'],
+                          session['title'] ?? 'Untitled Trip',
+                          isActive: isActive,
+                        );
+                      },
+                    ),
+            ),
+
+            const Divider(height: 1, color: Colors.black12),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
                 children: [
-                  _buildHistoryItem("KL Weekend Food Tour", isActive: true),
-                  _buildHistoryItem("Penang Layover", isActive: false),
-                  _buildHistoryItem("Sightseeing near KLCC", isActive: false),
+                  // 1. Profile Picture Avatar Module (Clickable for Photo Uploads)
+                  GestureDetector(
+                    onTap: widget.onChangeProfilePicture,
+                    child: CircleAvatar(
+                      radius: 20,
+                      backgroundColor: Colors.grey[200],
+                      backgroundImage: NetworkImage(widget.avatarUrl),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+
+                  // 2. Center User Name Metadata Context Block
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Hi, ${widget.userName}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.black87,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Text(
+                          'Welcome Back',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  IconButton(
+                    icon: const Icon(
+                      Icons.settings_outlined,
+                      color: Colors.black54,
+                      size: 22,
+                    ),
+                    onPressed: () {
+                      // Navigate or trigger settings page action logic here
+                    },
+                  ),
                 ],
               ),
-            ),
-            const Divider(height: 1, color: Colors.black12),
-            ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 8,
-              ),
-              leading: const Icon(
-                Icons.settings_outlined,
-                color: Colors.black54,
-              ),
-              title: const Text(
-                "Settings & Preferences",
-                style: TextStyle(fontSize: 14, color: Colors.black87),
-              ),
-              onTap: () {},
             ),
           ],
         ),
@@ -129,7 +286,11 @@ class SideMenu extends StatelessWidget {
     );
   }
 
-  Widget _buildHistoryItem(String title, {required bool isActive}) {
+  Widget _buildHistoryItem(
+    String sessionId,
+    String title, {
+    required bool isActive,
+  }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
@@ -157,7 +318,8 @@ class SideMenu extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         onTap: () {
-          // TODO: Load this chat thread from Supabase
+          widget.onSessionSelected(sessionId);
+          Navigator.pop(context);
         },
       ),
     );

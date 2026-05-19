@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_markdown_stream/flutter_markdown_stream.dart';
+
 import 'package:image_picker/image_picker.dart';
 
 import 'package:frontend/widgets/background_glow.dart';
@@ -27,9 +28,12 @@ class Chatbot_State extends State<Chatbot> {
 
   final List<Map<String, String>> _messages = [];
   bool _isTyping = false;
+  bool _isSending = false;
 
   String _userName = "Loading...";
   String _avatarUrl = "https://i.pravatar.cc/150?img=5";
+
+  String? _currentSessionId;
 
   @override
   void initState() {
@@ -40,26 +44,44 @@ class Chatbot_State extends State<Chatbot> {
   Future<void> _fetchUserData() async {
     try {
       final user = Supabase.instance.client.auth.currentUser;
-      if (user != null) {
-        // Assuming your table is named 'profiles'
-        final data = await Supabase.instance.client
-            .from('user_preferences')
-            .select('username, avatar_url')
-            .eq('id', user.id)
-            .maybeSingle();
+      if (user == null) return;
 
-        if (data != null && mounted) {
+      // 1. FETCH PROFILE DETAILS (Fixes the "Loading..." issue)
+      final profileData = await Supabase.instance.client
+          .from('user_preferences')
+          .select('username, avatar_url')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (profileData != null && mounted) {
+        setState(() {
+          _userName = profileData['username'] ?? "User";
+          _avatarUrl =
+              profileData['avatar_url'] ?? "https://i.pravatar.cc/150?img=5";
+        });
+      }
+
+      final existingSessions = await Supabase.instance.client
+          .from('chat_sessions')
+          .select('id')
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (existingSessions != null && mounted) {
+        setState(() {
+          _currentSessionId = existingSessions['id'];
+        });
+      } else {
+        if (mounted) {
           setState(() {
-            _userName = data['username'] ?? "User";
-            _avatarUrl = data['avatar_url'] ?? _avatarUrl;
+            _currentSessionId = null;
           });
         }
       }
     } catch (e) {
-      debugPrint("Error fetching user data: $e");
-      if (mounted) {
-        setState(() => _userName = "User"); // Fallback if fetch fails
-      }
+      debugPrint("Error initializing user profile data and session: $e");
     }
   }
 
@@ -121,7 +143,7 @@ class Chatbot_State extends State<Chatbot> {
   }
 
   Future<void> _handleSend(String text) async {
-    if (text.trim().isEmpty) return;
+    if (text.trim().isEmpty || _isSending) return;
 
     final userID = Supabase.instance.client.auth.currentUser!.id;
     final String backendUrl = "http://10.0.2.2:8000/api/chat";
@@ -129,6 +151,7 @@ class Chatbot_State extends State<Chatbot> {
     setState(() {
       _messages.add({"role": "user", "text": text});
       _isTyping = true;
+      _isSending = true;
     });
     _inputController.clear();
     _scrollToBottom();
@@ -140,16 +163,15 @@ class Chatbot_State extends State<Chatbot> {
       request.headers['Content-Type'] = 'application/json';
       request.body = jsonEncode({
         "user_id": userID,
+        "session_id": _currentSessionId ?? "",
         "message": text,
         "user_lat": position?.latitude,
         "user_lng": position?.longitude,
       });
 
-      // Use .send() to get a StreamedResponse
       final response = await http.Client().send(request);
 
       if (response.statusCode == 200) {
-        // Hide the thinking indicator and add an empty bubble for the AI
         setState(() {
           _isTyping = false;
           _messages.add({"role": "bot", "text": ""});
@@ -157,18 +179,24 @@ class Chatbot_State extends State<Chatbot> {
 
         int botIndex = _messages.length - 1;
 
-        // Listen to the stream chunk by chunk
         await for (var line
             in response.stream
                 .transform(utf8.decoder)
                 .transform(const LineSplitter())) {
           if (line.startsWith('data: ')) {
-            // Remove 'data: ' and decode the inner JSON
             final data = jsonDecode(line.substring(6));
+
+            if (data.containsKey('session_id')) {
+              final String receivedId = data['session_id'];
+              if (_currentSessionId != receivedId) {
+                setState(() {
+                  _currentSessionId = receivedId;
+                });
+              }
+            }
 
             if (data.containsKey('text')) {
               setState(() {
-                // Append the new token to the existing text
                 _messages[botIndex]["text"] =
                     _messages[botIndex]["text"]! + data['text'];
               });
@@ -187,8 +215,12 @@ class Chatbot_State extends State<Chatbot> {
         });
         _isTyping = false;
       });
+    } finally {
+      setState(() {
+        _isSending = false;
+      });
+      _scrollToBottom();
     }
-    _scrollToBottom();
   }
 
   void _scrollToBottom() {
@@ -203,11 +235,51 @@ class Chatbot_State extends State<Chatbot> {
     });
   }
 
+  Future<void> _loadChatMessages(String sessionId) async {
+    try {
+      final messagesData = await Supabase.instance.client
+          .from('chat_messages')
+          .select('role, content')
+          .eq('session_id', sessionId)
+          .order('created_at', ascending: true);
+
+      if (mounted) {
+        setState(() {
+          _messages.clear();
+          for (var entry in messagesData) {
+            _messages.add({"role": entry['role'], "text": entry['content']});
+          }
+        });
+        _scrollToBottom();
+      }
+    } catch (e) {
+      debugPrint("Error loading historical messages: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white, // Base background
-      drawer: const SideMenu(),
+      backgroundColor: Colors.white,
+      drawer: SideMenu(
+        currentSessionId: _currentSessionId,
+        userName: _userName,
+        avatarUrl: _avatarUrl,
+        onChangeProfilePicture: _changeProfilePicture,
+        onNewSessionCreated: () {
+          setState(() {
+            _currentSessionId = null;
+            _messages.clear();
+          });
+        },
+        onSessionSelected: (selectedSessionId) {
+          setState(() {
+            _currentSessionId = selectedSessionId;
+            _messages.clear();
+          });
+          _loadChatMessages(selectedSessionId);
+        },
+      ),
       body: Stack(
         children: [
           // 1. BACKGROUND GLOW EFFECTS
@@ -238,6 +310,7 @@ class Chatbot_State extends State<Chatbot> {
             right: 0,
             child: ChatInputArea(
               inputController: _inputController,
+              isSending: _isSending,
               onSend: (text) {
                 _handleSend(text);
               },
@@ -310,7 +383,7 @@ class Chatbot_State extends State<Chatbot> {
                       fontWeight: FontWeight.w800,
                       height: 1.5,
                     ),
-                    h3Padding: const EdgeInsets.only(top: 20),
+                    h3Padding: const EdgeInsets.only(top: 30),
                   ),
                 ),
               ),

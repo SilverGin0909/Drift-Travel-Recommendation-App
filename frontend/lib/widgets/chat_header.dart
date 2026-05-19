@@ -41,47 +41,7 @@ class ChatHeader extends StatelessWidget {
               color: Colors.black,
             ),
           ),
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Hi, $userName',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.black,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const Text(
-                        'Welcome Back',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 10),
-                  GestureDetector(
-                    onTap: onChangeProfilePicture,
-                    child: CircleAvatar(
-                      radius: 15,
-                      backgroundColor: Colors.grey[200],
-                      backgroundImage: NetworkImage(avatarUrl),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          Expanded(child: SizedBox.shrink()),
         ],
       ),
     );
