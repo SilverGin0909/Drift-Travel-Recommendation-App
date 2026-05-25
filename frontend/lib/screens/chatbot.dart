@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/services/location_service.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:flutter_markdown_stream/flutter_markdown_stream.dart';
 
 import 'package:image_picker/image_picker.dart';
 
@@ -120,7 +118,6 @@ class ChatbotState extends State<Chatbot> {
     if (text.trim().isEmpty || _isSending) return;
 
     final userID = Supabase.instance.client.auth.currentUser!.id;
-    final String backendUrl = "http://10.0.2.2:8000/api/chat";
 
     setState(() {
       _messages.add({"role": "user", "text": text});

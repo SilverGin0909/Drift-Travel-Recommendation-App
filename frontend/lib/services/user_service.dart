@@ -2,7 +2,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 
 class UserService {
-  static Future<Map<String, dynamic>?> fetchProfileDetails(String userId) async {
+  static Future<Map<String, dynamic>?> fetchProfileDetails(
+    String userId,
+  ) async {
     return await Supabase.instance.client
         .from('user_preferences')
         .select('username, avatar_url')
@@ -23,7 +25,8 @@ class UserService {
   static Future<String> uploadProfilePicture(String userId, XFile image) async {
     final bytes = await image.readAsBytes();
     final fileExt = image.name.split('.').last;
-    final fileName = '$userId-${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+    final fileName =
+        '$userId-${DateTime.now().millisecondsSinceEpoch}.$fileExt';
 
     await Supabase.instance.client.storage
         .from('avatars')
@@ -41,7 +44,9 @@ class UserService {
     return publicUrl;
   }
 
-  static Future<List<Map<String, dynamic>>> fetchChatMessages(String sessionId) async {
+  static Future<List<Map<String, dynamic>>> fetchChatMessages(
+    String sessionId,
+  ) async {
     return await Supabase.instance.client
         .from('chat_messages')
         .select('role, content')

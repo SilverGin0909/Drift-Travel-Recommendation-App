@@ -58,11 +58,14 @@ class BotMessageBubble extends StatelessWidget {
                   color: Colors.black,
                 ),
                 h3: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  height: 1.5,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                  height: 1.4,
                 ),
-                h3Padding: const EdgeInsets.only(top: 30),
+                h3Padding: const EdgeInsets.only(top: 20, bottom: 4),
+
+                blockSpacing: 18.0,
               ),
             ),
           ),
