@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel
 
 class ChatRequest(BaseModel):
@@ -7,6 +8,7 @@ class ChatRequest(BaseModel):
     user_lat: float | None = None
     user_lng: float | None = None
     radius_meters: float = 10000.0
+    prefs_context: Optional[str] = None
 
 class ChatResponse(BaseModel):
     reply: str

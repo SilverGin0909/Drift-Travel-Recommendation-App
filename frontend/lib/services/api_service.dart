@@ -8,6 +8,7 @@ class ApiService {
     required String text,
     required double? lat,
     required double? lng,
+    String? prefsContext,
   }) async {
     final String backendUrl = "http://10.0.2.2:8000/api/chat";
     final request = http.Request('POST', Uri.parse(backendUrl));
@@ -18,6 +19,9 @@ class ApiService {
       "message": text,
       "user_lat": lat,
       "user_lng": lng,
+      "prefs_context":
+          prefsContext ??
+          "Budget: Moderate, Style: General, Interests: Sightseeing",
     });
 
     return await http.Client().send(request);

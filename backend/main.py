@@ -55,8 +55,6 @@ async def chatbot_with_drift(request: ChatRequest):
             logger.info(f"Generated fresh session ID for new thread: {active_session_id}")
         
         router_task = asyncio.create_task(router_chain.ainvoke({"input": request.message}))
-        prefs_task = asyncio.create_task(asyncio.to_thread(get_user_prefs, request.user_id))
-
         route = await router_task
 
         if route.get("intent") in ["GREETING", "OFF_TOPIC"]:
@@ -89,14 +87,12 @@ async def chatbot_with_drift(request: ChatRequest):
 
         logger.info("Router identified TRAVEL_QUERY. Preparing main agent...")
 
-        prefs = await prefs_task
-
-        prefs_context = (
-            f"Budget: {prefs.get('budget', 'Moderate')}, "
-            f"Style: {prefs.get('style', 'Explorer')}, "
-            f"Interests: {prefs.get('interest', 'General')}"
-        )
-        logger.info(f"PREFS LOADED: {prefs_context}")
+        if request.prefs_context and request.prefs_context.strip() != "":
+            prefs_context = request.prefs_context
+            logger.info(f"NATIVE PREFS CAPTURED FROM FLUTTER PAYLOAD: {prefs_context}")
+        else:
+            prefs_context = "Budget: Moderate, Style: General, Interests: Sightseeing"
+            logger.info(f"No mobile prefs transmitted. Using default fallback: {prefs_context}")
 
         smart_title = generate_smart_title(request.message, max_length=30)
 

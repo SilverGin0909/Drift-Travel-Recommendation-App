@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
-class ChatInputArea extends StatelessWidget {
+class ChatInputArea extends StatefulWidget {
   final TextEditingController inputController;
   final bool isSending;
-  final ValueChanged<String> onSend;
+
+  /// Updated callback to pass the native message string along with the current preferences payload matrix
+  final Function(String message, Map<String, String> preferences) onSend;
 
   const ChatInputArea({
     super.key,
@@ -14,7 +16,166 @@ class ChatInputArea extends StatelessWidget {
   });
 
   @override
+  State<ChatInputArea> createState() => _ChatInputAreaState();
+}
+
+class _ChatInputAreaState extends State<ChatInputArea> {
+  // Native storage variables initialized with sensible default values
+  String _budget = "Moderate";
+  String _travelStyle = "General";
+  String _interests = "Sightseeing";
+
+  /// Displays the interactive preference configuration dialog window
+  void _showPreferencesDialog() {
+    // Temporary controllers to hold modifications prior to hitting the 'Save' gate
+    final budgetController = TextEditingController(text: _budget);
+    final styleController = TextEditingController(text: _travelStyle);
+    final interestsController = TextEditingController(text: _interests);
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.tune_rounded, color: Color(0xFF6155F5)),
+              SizedBox(width: 10),
+              Text(
+                "Travel Preferences",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildModalField(
+                  "Budget",
+                  budgetController,
+                  "e.g., Budget, Moderate, Luxury",
+                ),
+                const SizedBox(height: 12),
+                _buildModalField(
+                  "Travel Style",
+                  styleController,
+                  "e.g., Backpacker, Family, Solo",
+                ),
+                const SizedBox(height: 12),
+                _buildModalField(
+                  "Interests",
+                  interestsController,
+                  "e.g., Food, Sightseeing, Nature",
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                "Cancel",
+                style: TextStyle(color: Colors.black54),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6155F5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+              ),
+              onPressed: () {
+                setState(() {
+                  _budget = budgetController.text.trim().isEmpty
+                      ? "Moderate"
+                      : budgetController.text.trim();
+                  _travelStyle = styleController.text.trim().isEmpty
+                      ? "General"
+                      : styleController.text.trim();
+                  _interests = interestsController.text.trim().isEmpty
+                      ? "Sightseeing"
+                      : interestsController.text.trim();
+                });
+                Navigator.of(
+                  context,
+                ).pop(); // Closes dialog instantly upon saving
+              },
+              child: const Text(
+                "Save",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildModalField(
+    String label,
+    TextEditingController controller,
+    String hint,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(color: Colors.black38, fontSize: 13),
+            filled: true,
+            fillColor: const Color(0xFFF5F7FA),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.black12),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: Color(0xFF6155F5),
+                width: 1.5,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Pack the native live parameters up into a matching schema payload layout
+    final Map<String, String> currentPreferences = {
+      "budget": _budget,
+      "style": _travelStyle,
+      "interests": _interests,
+    };
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 40, 16, 20),
       decoration: BoxDecoration(
@@ -39,9 +200,11 @@ class ChatInputArea extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              controller: inputController,
-              onSubmitted: isSending ? null : onSend,
-              enabled: !isSending,
+              controller: widget.inputController,
+              onSubmitted: widget.isSending
+                  ? null
+                  : (val) => widget.onSend(val, currentPreferences),
+              enabled: !widget.isSending,
               maxLines: 3,
               minLines: 1,
               decoration: const InputDecoration(
@@ -54,7 +217,15 @@ class ChatInputArea extends StatelessWidget {
             const SizedBox(height: 12),
             Row(
               children: [
-                _buildPillButton(Icons.person_outline, "Preferences"),
+                // Pill button upgraded with InkWell gesture interactions
+                InkWell(
+                  onTap: widget.isSending ? null : _showPreferencesDialog,
+                  borderRadius: BorderRadius.circular(14),
+                  child: _buildPillButton(
+                    Icons.person_outline,
+                    "Preferences ($_budget)",
+                  ),
+                ),
                 const Spacer(),
                 Container(
                   width: 40,
@@ -70,13 +241,13 @@ class ChatInputArea extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child: isSending
+                  child: widget.isSending
                       ? const Padding(
                           padding: EdgeInsets.all(10.0),
                           child: CircularProgressIndicator(
                             strokeWidth: 2.5,
                             valueColor: AlwaysStoppedAnimation<Color>(
-                              Color(0xFF6155F5), // Custom theme purple/blue
+                              Color(0xFF6155F5),
                             ),
                           ),
                         )
@@ -88,16 +259,15 @@ class ChatInputArea extends StatelessWidget {
                               angle: -45 * (math.pi / 180),
                               child: const Icon(
                                 Icons.send_rounded,
-                                color: Color(
-                                  0xFF6155F5,
-                                ), // Custom theme purple/blue
+                                color: Color(0xFF6155F5),
                                 size: 20,
                               ),
                             ),
                           ),
                           onPressed: () {
-                            if (inputController.text.trim().isNotEmpty) {
-                              onSend(inputController.text);
+                            final textMsg = widget.inputController.text.trim();
+                            if (textMsg.isNotEmpty) {
+                              widget.onSend(textMsg, currentPreferences);
                             }
                           },
                         ),
@@ -128,11 +298,7 @@ class ChatInputArea extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 16,
-            color: const Color(0xFF6155F5),
-          ), // Custom theme purple/blue
+          Icon(icon, size: 16, color: const Color(0xFF6155F5)),
           const SizedBox(width: 6),
           Text(
             label,

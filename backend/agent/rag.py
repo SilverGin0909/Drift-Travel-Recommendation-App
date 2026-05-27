@@ -6,6 +6,9 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_community.tools import DuckDuckGoSearchRun
 import cohere
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
 from config import config
 from utilities.chat_history import get_session_history
 
@@ -17,7 +20,11 @@ cohere_client = None
 CATEGORY_RPC_MAPPING = {
     "Accommodation": "search_accommodations_hybrid",
     "Food": "search_nearby_places_hybrid",
-    "Attraction": "search_nearby_places_hybrid"
+    "Cultural": "search_nearby_places_hybrid",
+    "Natural": "search_nearby_places_hybrid",
+    "Shopping": "search_nearby_places_hybrid",
+    "Theme": "search_nearby_places_hybrid",
+    "Wellness": "search_nearby_places_hybrid"
 }
 
 @tool
@@ -39,17 +46,24 @@ def get_restaurant_reviews(restaurant_name: str):
         return "Could not retrieve live web reviews."
 
 @tool
-def kl_destinations_search(query: str, user_lat: float, user_lng: float, category: str = "General", sub_category: str = None):
+def kl_destinations_search(query: str, category: str = "General", sub_category: str = None):
     """
-    Search the centralized travel database for destinations in Kuala Lumpur, Selangor, and wider Malaysia.
+    Search the travel database for destinations in Kuala Lumpur, Selangor, and wider Malaysia.
+    Optimized for extracting items via textual name, area location strings, or specific categories.
+
+    PARAMETERS:
+    - query (str): Complete descriptive search terms or target destination area strings (e.g., 'massage', 'malls in Bukit Bintang', 'Cyberjaya cafes').
     
-    CRITICAL INTENT ROUTING RULES:
-    1. If the user asks for hotels, hostels, serviced apartments, resorts, stays, or lodging, you MUST set category='Accommodation'.
-    2. If the user asks for cafes, dining, specific food items, or restaurants, you MUST set category='Food'.
-    3. If the user asks for sights, landmarks, temples, or parks, you MUST set category='Attraction'.
-    
-    - query: Specific search terms (e.g., 'boutique hotel', 'nasi lemak', 'Batu Caves').
-    - user_lat / user_lng: The exact coordinates provided locked in system context.
+    - category (str): Broad primary row type cluster flags. You MUST choose from one of these exact strings if applicable:
+                      'Food'
+                      'Shopping mall'
+                      'Natural attraction'
+                      'Theme park'
+                      'Cultural and historical landmark'
+                      'Wellness'
+                      Use 'General' only if the user's request does not fit any of these categories.
+                      
+    - sub_category (str): Optional specific filter keys (e.g., 'Cafe', 'Italian restaurant', 'Spa', 'Massage').
     """
     global cohere_client
 
@@ -61,47 +75,58 @@ def kl_destinations_search(query: str, user_lat: float, user_lng: float, categor
             logger.info("First tool run detected. Initializing persistent Cohere ClientV2 instance...")
             cohere_client = cohere.ClientV2(api_key=config.COHERE_API_KEY)
 
-        asymmetric_query = f"task: search result | query: {query}"
         logger.info(f"[VERIFICATION - STEP 2] Generating asymmetric embedding text mapping via gemini-embedding-2...")
-        query_vector = config.embeddings.embed_query(asymmetric_query)
+        query_vector = config.embeddings.embed_query(query)
 
         logger.info(f"└── Successfully generated vector. Dimension output shape size: {len(query_vector)}")
 
         rpc_args = {
-            "query_embedding": query_vector,
             "query_text": query,
-            "user_lat": user_lat,
-            "user_lng": user_lng,
-            "radius_meters": 10000.0,
-            "match_count": 50
+            "query_embedding": query_vector,
+            "category_filter": category if category != "General" else None,
+            "subcategory_filter": sub_category
         }
-
-        if rpc_function == "search_accommodations_hybrid":
-            rpc_args["sub_category_filter"] = sub_category
-        else:
-            rpc_args["category_filter"] = category
 
         res = config.supabase.rpc(rpc_function, rpc_args).execute()
 
         docs = res.data
 
+        def run_parallel_searches(search_queries):
+            search_tool = DuckDuckGoSearchRun()
+            results = []
+            
+            with ThreadPoolExecutor(max_workers=len(search_queries)) as executor:
+                futures = {executor.submit(search_tool.run, q): q for q in search_queries}
+                for future in futures:
+                    q = futures[future]
+                    try:
+                        data = future.result()
+                        if data and isinstance(data, str):
+                            for snippet in data.split("\n\n"):
+                                clean_snippet = snippet.strip()
+                                if len(clean_snippet) > 40 and "Error" not in clean_snippet:
+                                    results.append(clean_snippet)
+                    except Exception as err:
+                        logger.error(f"Batch search fragment failed for '{q}': {str(err)}")
+            return results if len(results) > 0 else ["No real-time web results available for this query location boundary context."]
+
         if not docs or len(docs) == 0:
             logger.info(f"DATABASE MISS for '{query}'. Executing code-enforced DuckDuckGo fallback...")
             
-            search = DuckDuckGoSearchRun()
-            fallback_web_query = f"best {query} recommendations in kuala lumpur selangor travel reviews"
+            batch_queries = [
+                f"best {query} recommendations in kuala lumpur selangor travel reviews",
+                f"top trending viral {query} kuala lumpur blogs reviews",
+                f"hidden gem secret {query} locations around kuala lumpur"
+            ]
             
             try:
-                web_raw_snippets = search.run(fallback_web_query)
+                web_raw_snippets = run_parallel_searches(batch_queries)
                 return (
-                    f"SYSTEM LOG: Our internal database records yielded 0 active profiles for '{query}'. "
-                    f"The system successfully failed-over to live web scanning.\n\n"
-                    f"LIVE WEB CONTEXT:\n{web_raw_snippets}\n\n"
-                    f"INSTRUCTION: Synthesize these live web results to fulfill the user request, stating they are from live web sources."
+                    f"LIVE MULTI-WEB CONTEXT:\n{web_raw_snippets}\n\n"
                 )
             except Exception as web_err:
-                logger.error(f"DuckDuckGo fallback failed: {str(web_err)}")
-                return "No matching database metrics found, and fallback live search nodes are overloaded."
+                logger.error(f"DuckDuckGo concurrent fallback failed: {str(web_err)}") #
+                return "No matching database metrics found, and fallback live search nodes are overloaded." #
         
         logger.info(f"Retrieved {len(docs)} raw entries from database. Transferring to Cohere Rerank...")
 
@@ -109,12 +134,14 @@ def kl_destinations_search(query: str, user_lat: float, user_lng: float, categor
         for d in docs:
             phone = d.get('phone_number')
             contact_chunk = f" Contact: {phone}." if phone else ""
+            intro_chunk = f" Context: {d.get('introduction')}." if d.get('introduction') else ""
 
             chunk = (
                 f"Name: {d.get('name', 'Unknown')}. "
                 f"Type: {d.get('primary_category', 'N/A')} - {d.get('sub_category', 'General')}. "
                 f"Address: {d.get('address', 'Kuala Lumpur, Malaysia')}. "
                 f"{contact_chunk}"
+                f"{intro_chunk}"
                 f"Community Score: {d.get('reviews_average', 0)}/5 stars across {d.get('reviews_count', 0)} reviews."
             )
             documents_for_rerank.append(chunk)
@@ -141,12 +168,25 @@ def kl_destinations_search(query: str, user_lat: float, user_lng: float, categor
             phone_val = matched_doc.get('phone_number')
             contact_line = f"Contact Number: {phone_val}\n" if phone_val else ""
 
-            if rank_item.relevance_score < 0.25 and len(formatted_results) == 0:
-                logger.info(f"⚠️ Low Cohere confidence match ({relevance_confidence}%). Intercepting with Web Search Fallback.")
-                search = DuckDuckGoSearchRun()
-                web_raw_snippets = search.run(f"best {query} kuala lumpur travel choices and reviews")
-                return f"SYSTEM LOG: Internal data lacked direct relevance. Live web search results for '{query}':\n\n{web_raw_snippets}"
+            if rank_item.relevance_score < 0.45:
+                logger.info(f"Low Cohere confidence match ({relevance_confidence}%). Intercepting with Multi-Threaded Fallback.") #
+                
+                low_conf_queries = [
+                    f"best {query} kuala lumpur travel choices and reviews",
+                    f"is {matched_doc.get('name')} in kuala lumpur worth visiting reviews"
+                ]
 
+                web_raw_snippets = run_parallel_searches(low_conf_queries)
+                backup_rerank = cohere_client.rerank(
+                    model="rerank-v3.5",
+                    query=query,
+                    documents=web_raw_snippets,
+                    top_n=3
+                )
+
+                curated_backup = [f"-[Match: {round(r.relevance_score*100)}%] {web_raw_snippets[r.index]}" for r in backup_rerank.results]
+                return f"SYSTEM LOG: Internal data lacked direct relevance. Curated multi-perspective web search results for '{query}':\n\n" + "\n\n".join(curated_backup)
+            
             logger.info(f"Rerank Score Adjustment: '{matched_doc.get('name')}' consolidated to {relevance_confidence}%")
 
             place_info = (
@@ -184,8 +224,11 @@ async def agent_with_manual_history(user_message: str, session_id: str, prefs_co
         "you MUST immediately fallback to using the 'get_restaurant_reviews' tool to execute a web search.\n"
         "3. Do not give up if the database is empty; seamlessly transition to web search to find options for the user.\n\n"
         "CRITICAL TELEMETRY RULES:\n"
-        f"- The user's CURRENT coordinates are Latitude: {user_lat}, Longitude: {user_lng}. These coordinates are locked.\n"
-        "- When using kl_destinations_search, you MUST pass these exact coordinates into user_lat and user_lng parameters.\n\n"
+        f"- The user's CURRENT numerical coordinates are Latitude: {user_lat}, Longitude: {user_lng}.\n"
+        "- When the user states 'near me', 'nearby', or requests options within their local environment, use your deep geographic world knowledge "
+        "to resolve what neighborhood area zone those coordinates point to (e.g., 'Bukit Bintang', 'Cyberjaya', 'Kajang', 'Puchong').\n"
+        "- You MUST explicitly weave that resolved area neighborhood name string into the 'query' parameter when executing 'kl_destinations_search' "
+        "(e.g., passing query='cafes in Cyberjaya' or query='shopping malls in Bukit Bintang').\n\n"
         "PERSONALIZATION MATRIX:\n"
         f"Tailor your conversational tone and choices around these explicit user preferences:\n{prefs_context}\n\n"
         "CRITICAL OUTPUT FORMATTING STYLE:\n"
@@ -218,7 +261,6 @@ async def agent_with_manual_history(user_message: str, session_id: str, prefs_co
             {
                 "input": user_message,
                 "chat_history": old_messages,
-                "user_preferences": prefs_context
             },
             version="v2"
         ):

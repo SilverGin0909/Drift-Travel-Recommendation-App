@@ -114,7 +114,7 @@ class ChatbotState extends State<Chatbot> {
     }
   }
 
-  Future<void> _handleSend(String text) async {
+  Future<void> _handleSend(String text, Map<String, String> preferences) async {
     if (text.trim().isEmpty || _isSending) return;
 
     final userID = Supabase.instance.client.auth.currentUser!.id;
@@ -130,12 +130,16 @@ class ChatbotState extends State<Chatbot> {
     try {
       Position? position = await LocationService.determinePosition();
 
+      final String formattedPrefs =
+          "Budget: ${preferences['budget']}, Style: ${preferences['style']}, Interests: ${preferences['interests']}";
+
       final response = await ApiService.sendChatMessage(
         userID: userID,
         sessionId: _currentSessionId,
         text: text,
         lat: position?.latitude,
         lng: position?.longitude,
+        prefsContext: formattedPrefs,
       );
 
       if (response.statusCode == 200) {
@@ -167,6 +171,7 @@ class ChatbotState extends State<Chatbot> {
                 _messages[botIndex]["text"] =
                     _messages[botIndex]["text"]! + data['text'];
               });
+              _scrollToBottom();
             }
           }
         }
@@ -190,14 +195,37 @@ class ChatbotState extends State<Chatbot> {
     }
   }
 
+  bool _isScrollingAnimationActive = false;
+
   void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!_scrollController.hasClients) return;
+
+      final position = _scrollController.position;
+
+      if (_isScrollingAnimationActive ||
+          position.pixels >= position.maxScrollExtent) {
+        return;
+      }
+
+      try {
+        _isScrollingAnimationActive = true;
+
+        await _scrollController.animateTo(
+          position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
         );
+      } catch (e) {
+        debugPrint("Scroll animation interrupted: $e");
+      } finally {
+        _isScrollingAnimationActive = false;
+
+        if (mounted &&
+            _scrollController.position.pixels <
+                _scrollController.position.maxScrollExtent) {
+          _scrollToBottom();
+        }
       }
     });
   }
@@ -214,6 +242,10 @@ class ChatbotState extends State<Chatbot> {
           }
         });
         _scrollToBottom();
+        await Future.delayed(const Duration(milliseconds: 150));
+        if (mounted) {
+          _scrollToBottom();
+        }
       }
     } catch (e) {
       debugPrint("Error loading historical messages: $e");
@@ -274,8 +306,8 @@ class ChatbotState extends State<Chatbot> {
             child: ChatInputArea(
               inputController: _inputController,
               isSending: _isSending,
-              onSend: (text) {
-                _handleSend(text);
+              onSend: (text, preferences) {
+                _handleSend(text, preferences);
               },
             ),
           ),
