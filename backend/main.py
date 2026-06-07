@@ -17,7 +17,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from database.supabase import get_user_prefs
 from agent.rag import agent_with_manual_history
 from models.schemas import ChatRequest
-from config.config import supabase
+from config.config import supabase, llm
 
 # Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -87,6 +87,61 @@ async def chatbot_with_drift(request: ChatRequest):
 
         logger.info("Router identified TRAVEL_QUERY. Preparing main agent...")
 
+        raw_user_message = request.message
+        logger.info(f"Processing raw user message for search layer: '{raw_user_message}'")
+
+        history_context = ""
+        try:
+            history_manager = await get_session_history(active_session_id)
+            past_messages = await history_manager.aget_messages()
+            if past_messages:
+                recent_turns = past_messages[-3:]
+                history_chunks = []
+                for msg in recent_turns:
+                    role = "User" if msg.__class__.__name__ == "HumanMessage" else "Assistant"
+                    history_chunks.append(f"{role}: {msg.content}")
+                history_context = "\n".join(history_chunks)
+        except Exception as hist_err:
+            logger.warning(f"Could not load history for optimizer context: {str(hist_err)}")
+        
+        try:
+            pure_text_llm = llm.bind(tools=[])
+
+            optimization_prompt = (
+                f"You are a search query optimizer for a Malaysian travel and food chatbot.\n"
+                f"Convert the raw user message into a clean, natural English search query optimized "
+                f"for a vector database. Expand all texting shortcuts (e.g., 'bgi' -> 'give', 'bst' -> 'best', "
+                f"'dkt' -> 'near', 'mkn' -> 'eat', 'lain' -> 'other/alternative').\n\n"
+                f"CRITICAL: If the user message is a follow-up request (like 'any other options?', 'more please', 'ada option lain tak'), "
+                f"use the Chat History context provided below to determine what topic or food category they are referring to. "
+                f"Generate a search query that seeks ALTERNATIVES or DIFFERENT locations than what was previously discussed.\n\n"
+                f"Chat History Context:\n{history_context or 'No prior history'}\n\n"
+                f"New Raw User Message: {raw_user_message}\n\n"
+                f"Return ONLY the final optimized English search query string. Do not include quotes, explanations, or markdown."
+            )
+            
+            translation_response = await pure_text_llm.ainvoke(optimization_prompt)
+            content = translation_response.content
+
+            if isinstance(content, list):
+                search_query = ""
+                for item in content:
+                    if isinstance(item, dict) and "text" in item:
+                        search_query += item["text"]
+                    elif isinstance(item, str):
+                        search_query += item
+            else:
+                search_query = str(content)
+            
+            search_query = search_query.strip().strip('"').strip("'")
+
+            logger.info(f"Search Alignment Success: '{raw_user_message}' -> '{search_query}'")
+            processed_message = search_query
+
+        except Exception as err:
+            logger.error(f"Query optimization pipeline anomaly: {str(err)}. Falling back to raw message.")
+            processed_message = raw_user_message
+
         if request.prefs_context and request.prefs_context.strip() != "":
             prefs_context = request.prefs_context
             logger.info(f"NATIVE PREFS CAPTURED FROM FLUTTER PAYLOAD: {prefs_context}")
@@ -121,7 +176,7 @@ async def chatbot_with_drift(request: ChatRequest):
         async def stream_wrapper():
             try:
                 async for token in agent_with_manual_history(
-                    user_message=request.message, 
+                    user_message=processed_message, 
                     session_id=active_session_id, 
                     prefs_context=prefs_context,
                     user_lat=request.user_lat,

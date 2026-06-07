@@ -5,6 +5,7 @@ from langchain.tools import tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_community.tools import DuckDuckGoSearchRun
 import cohere
+import os
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -46,7 +47,7 @@ def get_restaurant_reviews(restaurant_name: str):
         return "Could not retrieve live web reviews."
 
 @tool
-def kl_destinations_search(query: str, category: str = "General", sub_category: str = None):
+def kl_destinations_search(query: str, category: str = "General", sub_category: str = None, prefs_context: str = ""):
     """
     Search the travel database for destinations in Kuala Lumpur, Selangor, and wider Malaysia.
     Optimized for extracting items via textual name, area location strings, or specific categories.
@@ -64,6 +65,7 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
                       Use 'General' only if the user's request does not fit any of these categories.
                       
     - sub_category (str): Optional specific filter keys (e.g., 'Cafe', 'Italian restaurant', 'Spa', 'Massage').
+    - prefs_context (str): Active user profile preferences passed to refine database lookups.
     """
     global cohere_client
 
@@ -75,6 +77,16 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
             logger.info("First tool run detected. Initializing persistent Cohere ClientV2 instance...")
             cohere_client = cohere.ClientV2(api_key=config.COHERE_API_KEY)
 
+        extracted_cost_tier = None
+        if prefs_context and prefs_context.strip() != "":
+            normalized_prefs = prefs_context.lower()
+            if "budget: budget" in normalized_prefs:
+                extracted_cost_tier = "Budget"
+            elif "budget: moderate" in normalized_prefs:
+                extracted_cost_tier = "Moderate"
+            elif "budget: luxury" in normalized_prefs:
+                extracted_cost_tier = "Luxury"
+        
         logger.info(f"[VERIFICATION - STEP 2] Generating asymmetric embedding text mapping via gemini-embedding-2...")
         query_vector = config.embeddings.embed_query(query)
 
@@ -84,7 +96,8 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
             "query_text": query,
             "query_embedding": query_vector,
             "category_filter": category if category != "General" else None,
-            "subcategory_filter": sub_category
+            "subcategory_filter": sub_category,
+            "cost_tier_filter": extracted_cost_tier
         }
 
         res = config.supabase.rpc(rpc_function, rpc_args).execute()
@@ -135,13 +148,17 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
             phone = d.get('phone_number')
             contact_chunk = f" Contact: {phone}." if phone else ""
             intro_chunk = f" Context: {d.get('introduction')}." if d.get('introduction') else ""
+            cost_val = d.get('cost_tier', 'N/A')
+            cost_chunk = f" Cost Category: {cost_val}."
 
             chunk = (
+                f"Target Location Match: Located in or near {query}. "
                 f"Name: {d.get('name', 'Unknown')}. "
                 f"Type: {d.get('primary_category', 'N/A')} - {d.get('sub_category', 'General')}. "
                 f"Address: {d.get('address', 'Kuala Lumpur, Malaysia')}. "
                 f"{contact_chunk}"
                 f"{intro_chunk}"
+                f"{cost_chunk}"
                 f"Community Score: {d.get('reviews_average', 0)}/5 stars across {d.get('reviews_count', 0)} reviews."
             )
             documents_for_rerank.append(chunk)
@@ -150,7 +167,7 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
         logger.info(f"[VERIFICATION - STEP 5] Sending document array to Cohere 'rerank-v3.5' cross-encoder...")
         rerank_response = cohere_client.rerank(
             model="rerank-v3.5",
-            query=query,
+            query=f"best {sub_category or 'places'} in or near {query} with {extracted_cost_tier or 'Moderate'} budget options",
             documents=documents_for_rerank,
             top_n=3
         )
@@ -191,11 +208,10 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
 
             place_info = (
                 f"Destination Name: {matched_doc.get('name', 'Unknown')}\n"
-                f"Classification: {category} ({matched_doc.get('sub_category', 'N/A')})\n"
-                f"Exact Address: {matched_doc.get('address', 'Information Missing')}\n"
+                f"Vibe: {matched_doc.get('introduction', 'Excellent option matching user profile indices.')}\n"
+                f"Location: {matched_doc.get('address', 'Information Missing')}\n"
                 f"{contact_line}"
-                f"Metrics: {matched_doc.get('reviews_average', 0)} stars ({matched_doc.get('reviews_count', 0)} reviews)\n"
-                f"Proximity: {round(matched_doc.get('distance_meters', 0))} meters away from user coordinates\n"
+                f"Metrics: {matched_doc.get('reviews_average', 0)} stars ({matched_doc.get('reviews_count', 0)} reviews) | Price Tier: {matched_doc.get('cost_tier', 'Moderate')}\n"
                 f"System Relevance Confidence: {relevance_confidence}%"
             )
             formatted_results.append(place_info)
@@ -219,30 +235,45 @@ async def agent_with_manual_history(user_message: str, session_id: str, prefs_co
     system_prompt_content = (
         "You are Drift, a helpful and expert AI travel assistant specializing ONLY in Kuala Lumpur, Selangor, and wider Malaysia.\n\n"
         "CORE RETRIEVAL STRATEGY RULES:\n"
-        "1. For general or specific queries about places, start by using the 'kl_destinations_search' tool to check our high-confidence local database.\n"
-        "2. If 'kl_destinations_search' returns no results, or if the user asks for trending spots, viral TikTok food venues, blog articles, or real-time web reviews, "
-        "you MUST immediately fallback to using the 'get_restaurant_reviews' tool to execute a web search.\n"
-        "3. Do not give up if the database is empty; seamlessly transition to web search to find options for the user.\n\n"
+        "1. STEP 1 (DATABASE): ALWAYS start by using the 'kl_destinations_search' tool to query our local database for options matching the user's request.\n"
+        "   CRITICAL PARAMETER HANDLING: You MUST explicitly map the exact 'prefs_context' block variable string "
+        "   provided below into the tool's 'prefs_context' argument field slot.\n"
+        "2. STEP 2 (LIVE REVIEWS): Once 'kl_destinations_search' returns specific restaurant names, you MUST immediately call the "
+        "   'get_restaurant_reviews' tool for those specific restaurant names to fetch live recommendations and what to order.\n"
+        "   - CRITICAL: Never call 'get_restaurant_reviews' with generic terms like 'best ramen'. Use the exact names discovered in Step 1 "
+        "     (e.g., if Step 1 returns 'Sushi ZenS Setapak Village', call get_restaurant_reviews(restaurant_name='Sushi ZenS Setapak Village')).\n"
+        "3. If 'kl_destinations_search' returns absolutely no results, you may immediately search the web using a descriptive phrase as a fallback.\n\n"
         "CRITICAL TELEMETRY RULES:\n"
         f"- The user's CURRENT numerical coordinates are Latitude: {user_lat}, Longitude: {user_lng}.\n"
         "- When the user states 'near me', 'nearby', or requests options within their local environment, use your deep geographic world knowledge "
         "to resolve what neighborhood area zone those coordinates point to (e.g., 'Bukit Bintang', 'Cyberjaya', 'Kajang', 'Puchong').\n"
         "- You MUST explicitly weave that resolved area neighborhood name string into the 'query' parameter when executing 'kl_destinations_search' "
         "(e.g., passing query='cafes in Cyberjaya' or query='shopping malls in Bukit Bintang').\n\n"
-        "PERSONALIZATION MATRIX:\n"
+        "PERSONALIZATION & CONTEXT SYNTHESIS MATRIX:\n"
         f"Tailor your conversational tone and choices around these explicit user preferences:\n{prefs_context}\n\n"
+        "When compiling the final description for each place, you MUST combine and mention BOTH of these sources:\n"
+        "1. The 'Vibe' / 'Introduction' text returned from the database matches (which includes local price trends and pricing context).\n"
+        "2. The food recommendations and review snippets retrieved from the 'get_restaurant_reviews' web search tool.\n\n"
         "CRITICAL OUTPUT FORMATTING STYLE:\n"
-        "When listing recommended places, hotels, or serviced apartments, you MUST structure them using clean Markdown H3 headers for the main titles.\n\n"
-        "DO NOT DO THIS:\n"
-        "- 1. **Furama Bukit Bintang**\n\n"
-        "EXCLUSIVELY USE THIS EXACT MARKDOWN PATTERN:\n"
+        "You MUST structure recommended places using clean Markdown H3 headers for the main titles. Follow this exact pattern closely:\n\n"
         "### 1. [Insert Place Name Here]\n"
-        "  * **Vibe:** [Insert descriptions, vibe, proximity, or amenities here]\n"
+        "  * **Vibe & Context:** [Synthesize the database introduction/vibe text and pricing details here]\n"
+        "  * **What to Order (Live Reviews):** [Summarize the recommendations and snippets retrieved from the get_restaurant_reviews tool here]\n"
         "  * **Location:** [Insert address details here]\n\n"
-        "Strictly ensure that the place name line starts directly with '### ' followed by the number (e.g., '### 1. ', '### 2. '). Do not put any list dashes (*, -, or •) before the '###' tag. Bullets are ONLY allowed for the indented attributes directly underneath the title.\n\n"
+        "Ensure the place name line starts directly with '### ' followed by the number. Do not put any bullet list dashes before the '###' tag.\n\n""PERSONALIZATION & CONTEXT SYNTHESIS MATRIX:\n"
+        f"Tailor your conversational tone and choices around these explicit user preferences:\n{prefs_context}\n\n"
+        "When compiling the final description for each place, you MUST combine and mention BOTH of these sources:\n"
+        "1. The 'Vibe' / 'Introduction' text returned from the database matches (which includes local price trends and pricing context).\n"
+        "2. The food recommendations and review snippets retrieved from the 'get_restaurant_reviews' web search tool.\n\n"
+        "CRITICAL OUTPUT FORMATTING STYLE:\n"
+        "You MUST structure recommended places using clean Markdown H3 headers for the main titles. Follow this exact pattern closely:\n\n"
+        "### 1. [Insert Place Name Here]\n"
+        "  * **Vibe & Context:** [Synthesize the database introduction/vibe text and pricing details here]\n"
+        "  * **What to Order (Live Reviews):** [Summarize the recommendations and snippets retrieved from the get_restaurant_reviews tool here]\n"
+        "  * **Location:** [Insert address details here]\n\n"
+        "Ensure the place name line starts directly with '### ' followed by the number. Do not put any bullet list dashes before the '###' tag.\n\n"
         "CONVERSATIONAL STYLE:\n"
-        "- Keep responses clear, concise, and professional.\n"
-        "- If a place is gathered from web search rather than the database, present it beautifully using the template above and mention it was found via live web review snippets."
+        "- Keep responses clear, concise, professional, and data-driven based entirely on your tool outputs."
     )
 
     runtime_prompt = ChatPromptTemplate.from_messages([
