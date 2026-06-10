@@ -3,6 +3,7 @@ import 'package:frontend/screens/signup.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -263,30 +264,6 @@ class LoginPage_State extends State<LoginPage> {
                     ),
                   ],
                 ),
-
-                SizedBox(height: 20),
-
-                Material(
-                  color: Colors.white,
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    onTap: () {
-                      _handleGoogleSignIn();
-                    },
-                    borderRadius: BorderRadius.circular(50),
-                    child: Container(
-                      padding: const EdgeInsets.all(16.0),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.grey.shade300,
-                          width: 1.5,
-                        ),
-                      ),
-                      child: Image.asset('assets/icons/google.png', height: 36),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -313,11 +290,16 @@ class LoginPage_State extends State<LoginPage> {
       dialogNavigator.pop();
 
       if (res.user != null) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (context) => const Chatbot()),
-          (route) => false,
-        );
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('remember_me', _rememberMe);
+
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const Chatbot()),
+            (route) => false,
+          );
+        }
       }
     } on AuthException catch (e) {
       dialogNavigator.pop();
@@ -331,22 +313,6 @@ class LoginPage_State extends State<LoginPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Login failed: ${e.toString()}"),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  Future<void> _handleGoogleSignIn() async {
-    try {
-      await Supabase.instance.client.auth.signInWithOAuth(
-        OAuthProvider.google,
-        redirectTo: '[REDACTED_SECRET]/auth/v1/callback',
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Google login failed: ${e.toString()}"),
           backgroundColor: Colors.red,
         ),
       );

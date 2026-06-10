@@ -204,28 +204,6 @@ class SignupPage_State extends State<SignupPage> {
                     ),
                   ],
                 ),
-
-                SizedBox(height: 20),
-
-                Material(
-                  color: Colors.white,
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    onTap: () {},
-                    borderRadius: BorderRadius.circular(50),
-                    child: Container(
-                      padding: const EdgeInsets.all(16.0),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.grey.shade300,
-                          width: 1.5,
-                        ),
-                      ),
-                      child: Image.asset('assets/icons/google.png', height: 36),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),

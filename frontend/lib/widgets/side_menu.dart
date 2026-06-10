@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:frontend/screens/login.dart';
 
 class SideMenu extends StatefulWidget {
   final String? currentSessionId;
@@ -269,12 +271,26 @@ class _SideMenuState extends State<SideMenu> {
 
                   IconButton(
                     icon: const Icon(
-                      Icons.settings_outlined,
-                      color: Colors.white54,
+                      Icons.logout_rounded,
+                      color: Colors.redAccent,
                       size: 22,
                     ),
-                    onPressed: () {
-                      // Navigate or trigger settings page action logic here
+                    onPressed: () async {
+                      // 1. Sign out of Supabase
+                      await Supabase.instance.client.auth.signOut();
+                      
+                      // 2. Clear remember_me flag
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setBool('remember_me', false);
+                      
+                      // 3. Route to Login Page, clearing route history
+                      if (context.mounted) {
+                        Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(builder: (context) => const LoginPage()),
+                          (route) => false,
+                        );
+                      }
                     },
                   ),
                 ],
