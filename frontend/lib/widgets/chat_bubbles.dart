@@ -46,21 +46,21 @@ class BotMessageBubble extends StatelessWidget {
             child: MarkdownBody(
               data: text,
               styleSheet: MarkdownStyleSheet(
-                p: const TextStyle(
+                p: TextStyle(
                   fontSize: 14,
                   height: 1.5,
-                  color: Colors.black87,
+                  color: Colors.white.withValues(alpha: 0.9),
                   fontWeight: FontWeight.w400,
                 ),
                 strong: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black,
+                  color: Colors.white,
                 ),
                 h3: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black,
+                  color: Color(0xFF818CF8), // A beautiful vibrant light purple accent
                   height: 1.4,
                 ),
                 h3Padding: const EdgeInsets.only(top: 20, bottom: 4),

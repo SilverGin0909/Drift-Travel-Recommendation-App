@@ -17,7 +17,7 @@ class ThinkingIndicator extends StatelessWidget {
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 12,
-                color: Colors.black54,
+                color: Colors.white54,
               ),
             ),
             const SizedBox(height: 8),
@@ -42,7 +42,7 @@ class ThinkingIndicator extends StatelessWidget {
                       Text(
                         "Searching KL for you...",
                         style: TextStyle(
-                          color: Colors.grey[600],
+                          color: Colors.grey[400],
                           fontSize: 14,
                           fontStyle: FontStyle.italic,
                         ),

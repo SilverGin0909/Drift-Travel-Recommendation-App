@@ -255,7 +255,7 @@ class ChatbotState extends State<Chatbot> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.black,
       drawer: SideMenu(
         currentSessionId: _currentSessionId,
         userName: _userName,
@@ -278,7 +278,7 @@ class ChatbotState extends State<Chatbot> {
       body: Stack(
         children: [
           // 1. BACKGROUND GLOW EFFECTS
-          const BackgroundGlow(),
+          BackgroundGlow(isThinking: _isTyping || _isSending),
 
           // 2. MAIN CONTENT
           Column(

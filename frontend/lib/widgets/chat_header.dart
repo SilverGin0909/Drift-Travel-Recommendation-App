@@ -24,7 +24,7 @@ class ChatHeader extends StatelessWidget {
               child: Builder(
                 builder: (context) {
                   return IconButton(
-                    icon: const Icon(Icons.menu, color: Colors.black87),
+                    icon: const Icon(Icons.menu, color: Colors.white70),
                     onPressed: () {
                       Scaffold.of(context).openDrawer();
                     },
@@ -38,7 +38,7 @@ class ChatHeader extends StatelessWidget {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w500,
-              color: Colors.black,
+              color: Colors.white,
             ),
           ),
           Expanded(child: SizedBox.shrink()),

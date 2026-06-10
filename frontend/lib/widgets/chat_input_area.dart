@@ -36,16 +36,18 @@ class _ChatInputAreaState extends State<ChatInputArea> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+          backgroundColor: const Color(0xFF161622), // Deep dark modal background
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Colors.white10, width: 1),
           ),
           title: const Row(
             children: [
-              Icon(Icons.tune_rounded, color: Color(0xFF6155F5)),
+              Icon(Icons.tune_rounded, color: Color(0xFF818CF8)),
               SizedBox(width: 10),
               Text(
                 "Travel Preferences",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
               ),
             ],
           ),
@@ -78,7 +80,7 @@ class _ChatInputAreaState extends State<ChatInputArea> {
               onPressed: () => Navigator.of(context).pop(),
               child: const Text(
                 "Cancel",
-                style: TextStyle(color: Colors.black54),
+                style: TextStyle(color: Colors.white54),
               ),
             ),
             ElevatedButton(
@@ -135,24 +137,25 @@ class _ChatInputAreaState extends State<ChatInputArea> {
           style: const TextStyle(
             fontWeight: FontWeight.w600,
             fontSize: 14,
-            color: Colors.black87,
+            color: Colors.white70,
           ),
         ),
         const SizedBox(height: 6),
         TextField(
           controller: controller,
+          style: const TextStyle(color: Colors.white, fontSize: 14),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(color: Colors.black38, fontSize: 13),
+            hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
             filled: true,
-            fillColor: const Color(0xFFF5F7FA),
+            fillColor: Colors.white.withValues(alpha: 0.08),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 14,
               vertical: 12,
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.black12),
+              borderSide: const BorderSide(color: Colors.white12),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -183,9 +186,9 @@ class _ChatInputAreaState extends State<ChatInputArea> {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.white.withValues(alpha: 0.0),
-            Colors.white.withValues(alpha: 0.9),
-            Colors.white,
+            Colors.black.withValues(alpha: 0.0),
+            Colors.black.withValues(alpha: 0.9),
+            Colors.black,
           ],
           stops: const [0.0, 0.4, 1.0],
         ),
@@ -193,8 +196,9 @@ class _ChatInputAreaState extends State<ChatInputArea> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFFF0F4F9),
+          color: Colors.white.withValues(alpha: 0.08), // Frost-glass dark background
           borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: Colors.white10),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -207,9 +211,10 @@ class _ChatInputAreaState extends State<ChatInputArea> {
               enabled: !widget.isSending,
               maxLines: 3,
               minLines: 1,
+              style: const TextStyle(color: Colors.white, fontSize: 15),
               decoration: const InputDecoration(
                 hintText: "Ask Drift...",
-                hintStyle: TextStyle(color: Colors.black54, fontSize: 15),
+                hintStyle: TextStyle(color: Colors.white54, fontSize: 15),
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.zero,
               ),
@@ -231,11 +236,11 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                   width: 40,
                   height: 40,
                   decoration: const BoxDecoration(
-                    color: Colors.white,
+                    color: Color(0xFF6155F5), // Glowing blue-purple button
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black12,
+                        color: Colors.black38,
                         blurRadius: 4,
                         offset: Offset(0, 2),
                       ),
@@ -247,7 +252,7 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                           child: CircularProgressIndicator(
                             strokeWidth: 2.5,
                             valueColor: AlwaysStoppedAnimation<Color>(
-                              Color(0xFF6155F5),
+                              Colors.white,
                             ),
                           ),
                         )
@@ -259,7 +264,7 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                               angle: -45 * (math.pi / 180),
                               child: const Icon(
                                 Icons.send_rounded,
-                                color: Color(0xFF6155F5),
+                                color: Colors.white,
                                 size: 20,
                               ),
                             ),
@@ -284,28 +289,20 @@ class _ChatInputAreaState extends State<ChatInputArea> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.white.withValues(alpha: 0.06), // Frosted glass pill button
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withValues(alpha: 0.5),
-            spreadRadius: 0.2,
-            blurRadius: 0.2,
-            offset: const Offset(0, 0.5),
-          ),
-        ],
+        border: Border.all(color: Colors.white10),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: const Color(0xFF6155F5)),
+          Icon(icon, size: 16, color: const Color(0xFF818CF8)),
           const SizedBox(width: 6),
           Text(
             label,
             style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: Colors.black87,
+              color: Colors.white70,
             ),
           ),
         ],

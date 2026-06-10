@@ -101,7 +101,7 @@ class _SideMenuState extends State<SideMenu> {
   @override
   Widget build(BuildContext context) {
     return Drawer(
-      backgroundColor: const Color(0xFFF8F9FB),
+      backgroundColor: const Color(0xFF09090F), // Velvet dark theme background
       elevation: 0,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.horizontal(right: Radius.circular(24)),
@@ -118,24 +118,24 @@ class _SideMenuState extends State<SideMenu> {
                   Container(
                     height: 44,
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.05),
+                      color: Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: TextField(
                       controller: _searchController,
                       style: const TextStyle(
                         fontSize: 14,
-                        color: Colors.black87,
+                        color: Colors.white,
                       ),
                       decoration: const InputDecoration(
                         hintText: "Search trips...",
                         hintStyle: TextStyle(
-                          color: Colors.black54,
+                          color: Colors.white38,
                           fontSize: 14,
                         ),
                         prefixIcon: Icon(
                           Icons.search,
-                          color: Colors.black54,
+                          color: Colors.white38,
                           size: 20,
                         ),
                         border: InputBorder.none,
@@ -185,7 +185,7 @@ class _SideMenuState extends State<SideMenu> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black45,
+                  color: Colors.white38,
                   letterSpacing: 0.5,
                 ),
               ),
@@ -203,7 +203,7 @@ class _SideMenuState extends State<SideMenu> {
                       ),
                       child: Text(
                         "No itineraries found.",
-                        style: TextStyle(color: Colors.black38),
+                        style: TextStyle(color: Colors.white24),
                       ),
                     )
                   : ListView.builder(
@@ -222,7 +222,7 @@ class _SideMenuState extends State<SideMenu> {
                     ),
             ),
 
-            const Divider(height: 1, color: Colors.black12),
+            const Divider(height: 1, color: Colors.white10),
 
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -233,7 +233,7 @@ class _SideMenuState extends State<SideMenu> {
                     onTap: widget.onChangeProfilePicture,
                     child: CircleAvatar(
                       radius: 20,
-                      backgroundColor: Colors.grey[200],
+                      backgroundColor: Colors.white10,
                       backgroundImage: NetworkImage(widget.avatarUrl),
                     ),
                   ),
@@ -251,7 +251,7 @@ class _SideMenuState extends State<SideMenu> {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 14,
-                            color: Colors.black87,
+                            color: Colors.white,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -260,7 +260,7 @@ class _SideMenuState extends State<SideMenu> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w400,
-                            color: Colors.black54,
+                            color: Colors.white54,
                           ),
                         ),
                       ],
@@ -270,7 +270,7 @@ class _SideMenuState extends State<SideMenu> {
                   IconButton(
                     icon: const Icon(
                       Icons.settings_outlined,
-                      color: Colors.black54,
+                      color: Colors.white54,
                       size: 22,
                     ),
                     onPressed: () {
@@ -295,7 +295,7 @@ class _SideMenuState extends State<SideMenu> {
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
         color: isActive
-            ? Colors.black.withValues(alpha: 0.05)
+            ? Colors.white.withValues(alpha: 0.08)
             : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
       ),
@@ -305,14 +305,14 @@ class _SideMenuState extends State<SideMenu> {
         leading: Icon(
           Icons.chat_bubble_outline,
           size: 18,
-          color: isActive ? const Color(0xFF6155F5) : Colors.black54,
+          color: isActive ? const Color(0xFF818CF8) : Colors.white54,
         ),
         title: Text(
           title,
           style: TextStyle(
             fontSize: 14,
             fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-            color: isActive ? Colors.black87 : Colors.black54,
+            color: isActive ? Colors.white : Colors.white70,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,

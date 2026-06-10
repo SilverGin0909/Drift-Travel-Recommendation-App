@@ -44,7 +44,7 @@ class WelcomeScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
-                color: Colors.black,
+                color: Colors.white70,
               ),
             ),
             const SizedBox(height: 160),
