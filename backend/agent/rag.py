@@ -5,9 +5,8 @@ from langchain.tools import tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_community.tools import DuckDuckGoSearchRun
 import cohere
-import os
+from datetime import datetime
 
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 from config import config
@@ -45,17 +44,72 @@ def get_restaurant_reviews(restaurant_name: str):
     except Exception as e:
         logger.error(f"TripAdvisor scrap anomaly: {str(e)}")
         return "Could not retrieve live web reviews."
+    
+@tool
+def kl_accommodations_search(query: str, cost_tier: str = None, sub_category: str = None) -> str:
+    """
+    Search strictly for places to stay overnight, lodging, and hospitality venues in Malaysia.
+    
+    CRITICAL APPLICATION: Use this tool ONLY when the user is explicitly looking to book a room, 
+    find a hotel, a backpacker hostel, homestay, resort, or overnight lodging.
+    
+    CLASSIFICATION WARNING: DO NOT use this tool for restaurants, cafes, food, malls, or daytime activities.
+    
+    PARAMETERS:
+    - query (str): Specific area name or lodging keyword (e.g., 'hostels in Petaling Jaya', 'stay in Cyberjaya').
+    - cost_tier (str): Optional budget flag. Pass strictly: 'budget', 'moderate', or 'luxury' if inferred.
+    - sub_category (str): Optional specific type. Pass strictly: 'Hostel', 'Hotel', or 'Service apartment'.
+    """
+    logger.info(f"ACCOMMODATION ROUTER - Executing query: '{query}' | Tier: {cost_tier} | Sub: {sub_category}")
+    
+    try:
+        query_vector = config.embeddings.embed_query(query)
+        
+        rpc_args = {
+            "query_text": query,
+            "query_embedding": query_vector,
+            "cost_tier_filter": cost_tier if cost_tier else None,
+            "subcategory_filter": sub_category if sub_category else None,
+            "match_count": 10
+        }
+        
+        res = config.supabase.rpc("search_accommodations_hybrid", rpc_args).execute()
+        docs = res.data
+        
+        if not docs:
+            return "No matching hotels, hostels, or accommodation choices found in this target region area."
+            
+        formatted_accommodation = []
+        for d in docs:
+            info = (
+                f"Accommodation Option: {d.get('name', 'Unknown')}\n"
+                f"Type: {d.get('sub_category', 'General')} | Price Bracket: {d.get('cost_tier', 'Moderate')}\n"
+                f"Location / Address: {d.get('address', 'Information Missing')}\n"
+                f"Rating Summary: {d.get('reviews_average', 0)} stars ({d.get('reviews_count', 0)} reviews)\n"
+                f"Description Context: {d.get('introduction', 'No description available.')}"
+            )
+            formatted_accommodation.append(info)
+            
+        return "\n\n---\n\n".join(formatted_accommodation)
+        
+    except Exception as e:
+        logger.error(f"Accommodations database query layer failure: {str(e)}", exc_info=True)
+        return "Accommodation databases are currently undergoing system resets. Re-route user to general advice."
 
 @tool
-def kl_destinations_search(query: str, category: str = "General", sub_category: str = None, prefs_context: str = ""):
+def kl_destinations_search(query: str, user_lat: float, user_lng: float, category: str = "General", sub_category: str = None, prefs_context: str = ""):
     """
-    Search the travel database for destinations in Kuala Lumpur, Selangor, and wider Malaysia.
-    Optimized for extracting items via textual name, area location strings, or specific categories.
+    Search for permanent local daytime activities, sightseeing attractions, and food spots across Malaysia.
+    
+    CRITICAL APPLICATION: Use this ONLY for day-trip venues, cafes, restaurants, dining, shopping malls, 
+    spas, landmarks, parks, and general sightseeing. 
+    
+    CLASSIFICATION WARNING: DO NOT use this tool if the user is looking for a place to stay, hotels, or overnight lodging.
 
     PARAMETERS:
     - query (str): Complete descriptive search terms or target destination area strings (e.g., 'massage', 'malls in Bukit Bintang', 'Cyberjaya cafes').
     
-    - category (str): Broad primary row type cluster flags. You MUST choose from one of these exact strings if applicable:
+    - category (str): You MUST choose from one of these exact strings if applicable:
                       'Food'
                       'Shopping mall'
                       'Natural attraction'
@@ -63,7 +117,6 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
                       'Cultural and historical landmark'
                       'Wellness'
                       Use 'General' only if the user's request does not fit any of these categories.
-                      
     - sub_category (str): Optional specific filter keys (e.g., 'Cafe', 'Italian restaurant', 'Spa', 'Massage').
     - prefs_context (str): Active user profile preferences passed to refine database lookups.
     """
@@ -90,15 +143,26 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
         logger.info(f"[VERIFICATION - STEP 2] Generating asymmetric embedding text mapping via gemini-embedding-2...")
         query_vector = config.embeddings.embed_query(query)
 
-        logger.info(f"└── Successfully generated vector. Dimension output shape size: {len(query_vector)}")
+        logger.info(f"Successfully generated vector. Dimension output shape size: {len(query_vector)}")
 
-        rpc_args = {
-            "query_text": query,
-            "query_embedding": query_vector,
-            "category_filter": category if category != "General" else None,
-            "subcategory_filter": sub_category,
-            "cost_tier_filter": extracted_cost_tier
-        }
+        if rpc_function == "search_accommodations_hybrid":
+            rpc_args = {
+                "query_text": query,
+                "query_embedding": query_vector,
+                "cost_tier_filter": extracted_cost_tier,
+                "subcategory_filter": sub_category,
+            }
+        else:
+            rpc_args = {
+                "query_text": query,
+                "query_embedding": query_vector,
+                "user_lat": float(user_lat),
+                "user_lng": float(user_lng),
+                "radius_meters": 12000.0,
+                "category_filter": category if category != "General" else None,
+                "cost_tier_filter": extracted_cost_tier,
+            }
+
 
         res = config.supabase.rpc(rpc_function, rpc_args).execute()
 
@@ -145,8 +209,6 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
 
         documents_for_rerank = []
         for d in docs:
-            phone = d.get('phone_number')
-            contact_chunk = f" Contact: {phone}." if phone else ""
             intro_chunk = f" Context: {d.get('introduction')}." if d.get('introduction') else ""
             cost_val = d.get('cost_tier', 'N/A')
             cost_chunk = f" Cost Category: {cost_val}."
@@ -156,7 +218,6 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
                 f"Name: {d.get('name', 'Unknown')}. "
                 f"Type: {d.get('primary_category', 'N/A')} - {d.get('sub_category', 'General')}. "
                 f"Address: {d.get('address', 'Kuala Lumpur, Malaysia')}. "
-                f"{contact_chunk}"
                 f"{intro_chunk}"
                 f"{cost_chunk}"
                 f"Community Score: {d.get('reviews_average', 0)}/5 stars across {d.get('reviews_count', 0)} reviews."
@@ -180,10 +241,6 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
             idx = rank_item.index
             matched_doc = docs[idx]
             relevance_confidence = round(rank_item.relevance_score * 100, 1)
-
-            # Extract phone number if exists
-            phone_val = matched_doc.get('phone_number')
-            contact_line = f"Contact Number: {phone_val}\n" if phone_val else ""
 
             if rank_item.relevance_score < 0.45:
                 logger.info(f"Low Cohere confidence match ({relevance_confidence}%). Intercepting with Multi-Threaded Fallback.") #
@@ -210,7 +267,6 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
                 f"Destination Name: {matched_doc.get('name', 'Unknown')}\n"
                 f"Vibe: {matched_doc.get('introduction', 'Excellent option matching user profile indices.')}\n"
                 f"Location: {matched_doc.get('address', 'Information Missing')}\n"
-                f"{contact_line}"
                 f"Metrics: {matched_doc.get('reviews_average', 0)} stars ({matched_doc.get('reviews_count', 0)} reviews) | Price Tier: {matched_doc.get('cost_tier', 'Moderate')}\n"
                 f"System Relevance Confidence: {relevance_confidence}%"
             )
@@ -222,58 +278,82 @@ def kl_destinations_search(query: str, category: str = "General", sub_category: 
     except Exception as e:
         logger.error(f"Critical execution failure inside kl_destinations_search: {str(e)}", exc_info=True)
         return "DATABASE AND SEARCH CHANNELS TEMPORARILY OFFLINE. Assist user via fallback knowledge bases."
+    
+@tool
+def kl_events_and_festivals_search(query: str) -> str:
+    """
+    Search for upcoming concerts, live sports matches, festivals, and community events 
+    happening in Kuala Lumpur, Selangor, and greater Malaysia.
+    """
+    logger.info(f"TOOL TRIGGERED: kl_events_and_festivals_search | Query: '{query}'")
+    
+    cleaned_query = query.lower().replace("events in", "").replace("activities in", "").replace("things to do in", "").strip()
+    is_generic = cleaned_query in ["kuala lumpur", "selangor", "malaysia", "events", ""]
+
+    try:
+        logger.info("[EVENTS RETRIEVAL] Computing search query vector dimensions...")
+        embed_text = query if query.strip() else "concert festival sports match exhibition"
+        query_vector = config.embeddings.embed_query(embed_text)
+        
+        rpc_args = {
+            "query_text": None if is_generic else cleaned_query,
+            "query_embedding": query_vector,
+        }
+        
+        res = config.supabase.rpc("search_upcoming_events_hybrid", rpc_args).execute()
+        docs = res.data
+        
+        if not docs or len(docs) == 0:
+            logger.info(f"No current or future events found matching query tokens: '{query}'")
+            return "No matching live upcoming events, concerts, or festivals discovered in our local calendar schedule."
+
+        formatted_events = []
+        for d in docs:
+            venue = f" (Venue: {d.get('venue_name')})" if d.get('venue_name') else ""
+            event_info = (
+                f"Event Title: {d.get('title', 'Unknown')}\n"
+                f"Type: {d.get('category')} - Labels: {d.get('phq_labels', 'N/A')}\n"
+                f"Venue: Located{venue} around area of {d.get('locality', 'Kuala Lumpur')}\n"
+                f"Schedule: From {d.get('start_time')} until {d.get('end_time')}\n"
+                f"Database Matching Confidence Score: {round(d.get('semantic_score', 0) * 100, 1)}%"
+            )
+            formatted_events.append(event_info)
+            
+        logger.info(f"Successfully retrieved and structured {len(docs)} upcoming event context nodes.")
+        return "\n\n---\n\n".join(formatted_events)
+
+    except Exception as e:
+        logger.error(f"Execution boundary crash inside events search tool layer: {str(e)}", exc_info=True)
+        return "Events tracking systems are experiencing connection line delays. Advise user to check back shortly."
 
 async def agent_with_manual_history(user_message: str, session_id: str, prefs_context: str, user_lat: float, user_lng: float):
     history_manager = await get_session_history(session_id)
     old_messages = await history_manager.aget_messages()
-    logger.info(f"├── Successfully compiled conversation log. Loaded previous messages count: {len(old_messages)}")
+    logger.info(f"Successfully compiled conversation log. Loaded previous messages count: {len(old_messages)}")
 
     full_response = ""
     
-    tools = [kl_destinations_search, get_restaurant_reviews]
+    tools = [kl_destinations_search, get_restaurant_reviews, kl_events_and_festivals_search, kl_accommodations_search]
 
     system_prompt_content = (
         "You are Drift, a helpful and expert AI travel assistant specializing ONLY in Kuala Lumpur, Selangor, and wider Malaysia.\n\n"
-        "CORE RETRIEVAL STRATEGY RULES:\n"
-        "1. STEP 1 (DATABASE): ALWAYS start by using the 'kl_destinations_search' tool to query our local database for options matching the user's request.\n"
-        "   CRITICAL PARAMETER HANDLING: You MUST explicitly map the exact 'prefs_context' block variable string "
-        "   provided below into the tool's 'prefs_context' argument field slot.\n"
-        "2. STEP 2 (LIVE REVIEWS): Once 'kl_destinations_search' returns specific restaurant names, you MUST immediately call the "
-        "   'get_restaurant_reviews' tool for those specific restaurant names to fetch live recommendations and what to order.\n"
-        "   - CRITICAL: Never call 'get_restaurant_reviews' with generic terms like 'best ramen'. Use the exact names discovered in Step 1 "
-        "     (e.g., if Step 1 returns 'Sushi ZenS Setapak Village', call get_restaurant_reviews(restaurant_name='Sushi ZenS Setapak Village')).\n"
-        "3. If 'kl_destinations_search' returns absolutely no results, you may immediately search the web using a descriptive phrase as a fallback.\n\n"
-        "CRITICAL TELEMETRY RULES:\n"
-        f"- The user's CURRENT numerical coordinates are Latitude: {user_lat}, Longitude: {user_lng}.\n"
-        "- When the user states 'near me', 'nearby', or requests options within their local environment, use your deep geographic world knowledge "
-        "to resolve what neighborhood area zone those coordinates point to (e.g., 'Bukit Bintang', 'Cyberjaya', 'Kajang', 'Puchong').\n"
-        "- You MUST explicitly weave that resolved area neighborhood name string into the 'query' parameter when executing 'kl_destinations_search' "
-        "(e.g., passing query='cafes in Cyberjaya' or query='shopping malls in Bukit Bintang').\n\n"
-        "PERSONALIZATION & CONTEXT SYNTHESIS MATRIX:\n"
-        f"Tailor your conversational tone and choices around these explicit user preferences:\n{prefs_context}\n\n"
-        "When compiling the final description for each place, you MUST combine and mention BOTH of these sources:\n"
-        "1. The 'Vibe' / 'Introduction' text returned from the database matches (which includes local price trends and pricing context).\n"
-        "2. The food recommendations and review snippets retrieved from the 'get_restaurant_reviews' web search tool.\n\n"
+        "CRITICAL POSTGIS MANDATORY PARAMETER RULES\n"
+        f"The user is currently positioned at active coordinates: Latitude: {user_lat}, Longitude: {user_lng}.\n"
+        "When calling 'kl_destinations_search', you MUST always pass these exact numbers down into the "
+        f"user_lat ({user_lat}) and user_lng ({user_lng}) parameters without exception.\n\n"
+        "TOOL SELECTION RESTRICTIONS:\n"
+        "- Trigger 'kl_destinations_search' for all daytime sightseeing, cafes, dinner spots, spas, and malls.\n"
+        "- Trigger 'kl_accommodations_search' if a user asks for an overnight hotel, lodging, or place to sleep.\n"
+        "- Immediately after retrieving the destinations, use each destination's name to perform a web search "
+        f"using the 'get_restaurant_reviews' tool for reviews and recommendations.\n"
+        "PERSONALIZATION LOGIC:\n"
+        f"Tailor descriptions around these active user preferences:\n{prefs_context}\n\n"
         "CRITICAL OUTPUT FORMATTING STYLE:\n"
-        "You MUST structure recommended places using clean Markdown H3 headers for the main titles. Follow this exact pattern closely:\n\n"
-        "### 1. [Insert Place Name Here]\n"
-        "  * **Vibe & Context:** [Synthesize the database introduction/vibe text and pricing details here]\n"
-        "  * **What to Order (Live Reviews):** [Summarize the recommendations and snippets retrieved from the get_restaurant_reviews tool here]\n"
-        "  * **Location:** [Insert address details here]\n\n"
-        "Ensure the place name line starts directly with '### ' followed by the number. Do not put any bullet list dashes before the '###' tag.\n\n""PERSONALIZATION & CONTEXT SYNTHESIS MATRIX:\n"
-        f"Tailor your conversational tone and choices around these explicit user preferences:\n{prefs_context}\n\n"
-        "When compiling the final description for each place, you MUST combine and mention BOTH of these sources:\n"
-        "1. The 'Vibe' / 'Introduction' text returned from the database matches (which includes local price trends and pricing context).\n"
-        "2. The food recommendations and review snippets retrieved from the 'get_restaurant_reviews' web search tool.\n\n"
-        "CRITICAL OUTPUT FORMATTING STYLE:\n"
-        "You MUST structure recommended places using clean Markdown H3 headers for the main titles. Follow this exact pattern closely:\n\n"
-        "### 1. [Insert Place Name Here]\n"
-        "  * **Vibe & Context:** [Synthesize the database introduction/vibe text and pricing details here]\n"
-        "  * **What to Order (Live Reviews):** [Summarize the recommendations and snippets retrieved from the get_restaurant_reviews tool here]\n"
-        "  * **Location:** [Insert address details here]\n\n"
-        "Ensure the place name line starts directly with '### ' followed by the number. Do not put any bullet list dashes before the '###' tag.\n\n"
-        "CONVERSATIONAL STYLE:\n"
-        "- Keep responses clear, concise, professional, and data-driven based entirely on your tool outputs."
+        "You MUST structure recommended options using clean Markdown H3 headers for titles. Follow this pattern:\n\n"
+        "### 1. [Insert Place Name]\n"
+        "  * **Vibe & Context:** [Synthesize description context and pricing elements]\n"
+        "  * **Details & Proximity:** [Provide address details and call out the literal distance away in km from the tool output!]\n\n"
+        "Ensure the place name line starts directly with '### ' followed by the number. Do not use list dashes before the '###' tag."
     )
 
     runtime_prompt = ChatPromptTemplate.from_messages([

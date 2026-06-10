@@ -7,6 +7,7 @@ load_dotenv()
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from datetime import datetime
 import json
 import asyncio
 import uuid
@@ -105,19 +106,28 @@ async def chatbot_with_drift(request: ChatRequest):
             logger.warning(f"Could not load history for optimizer context: {str(hist_err)}")
         
         try:
+            current_time_str = datetime.now().strftime("%A, %B %d, %Y (Time: %H:%M)")
+            
             pure_text_llm = llm.bind(tools=[])
 
             optimization_prompt = (
                 f"You are a search query optimizer for a Malaysian travel and food chatbot.\n"
-                f"Convert the raw user message into a clean, natural English search query optimized "
-                f"for a vector database. Expand all texting shortcuts (e.g., 'bgi' -> 'give', 'bst' -> 'best', "
-                f"'dkt' -> 'near', 'mkn' -> 'eat', 'lain' -> 'other/alternative').\n\n"
-                f"CRITICAL: If the user message is a follow-up request (like 'any other options?', 'more please', 'ada option lain tak'), "
-                f"use the Chat History context provided below to determine what topic or food category they are referring to. "
-                f"Generate a search query that seeks ALTERNATIVES or DIFFERENT locations than what was previously discussed.\n\n"
+                f"Convert the raw user message into a clean, natural English search query optimized for a vector database.\n\n"
+                
+                f"CRITICAL REAL-WORLD TEMPORAL CONTEXT:\n"
+                f"- Today's Date is strictly: {current_time_str}\n\n"
+                
+                f"TEMPORAL CONTEXT RULES:\n"
+                f"1. If the user asks for events 'recently', 'now', or 'today', they want things happening immediately. Clean the query tokens to focus on broad event types (e.g., 'concerts', 'festivals', 'shows') and strip out the words 'recently' or 'today'.\n"
+                f"2. If the user follows up with 'what about future events', look at the Chat History to see what event types they were interested in. If they didn't specify a type, use broad keywords like 'festivals exhibitions concerts'. NEVER output the words 'future' or 'events' as search tokens.\n\n"
+                
+                f"GEOSPATIAL TELEMETRY CONTEXT:\n"
+                f"- User Coordinates: Latitude: {request.latitude}, Longitude: {request.longitude}.\n"
+                f"- If proximity is implied, resolve it to a neighborhood name (e.g., 'Bukit Bintang', 'Cyberjaya').\n\n"
+                
                 f"Chat History Context:\n{history_context or 'No prior history'}\n\n"
                 f"New Raw User Message: {raw_user_message}\n\n"
-                f"Return ONLY the final optimized English search query string. Do not include quotes, explanations, or markdown."
+                f"Return ONLY the final optimized English search query tokens. Do not include quotes, explanations, or markdown labels."
             )
             
             translation_response = await pure_text_llm.ainvoke(optimization_prompt)
