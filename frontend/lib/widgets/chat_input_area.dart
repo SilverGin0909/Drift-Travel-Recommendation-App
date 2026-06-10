@@ -5,8 +5,8 @@ class ChatInputArea extends StatefulWidget {
   final TextEditingController inputController;
   final bool isSending;
 
-  /// Updated callback to pass the native message string along with the current preferences payload matrix
-  final Function(String message, Map<String, String> preferences) onSend;
+  /// Updated callback to pass the native message string along with the current preferences payload matrix and itinerary mode
+  final Function(String message, Map<String, String> preferences, bool isItineraryMode) onSend;
 
   const ChatInputArea({
     super.key,
@@ -24,6 +24,7 @@ class _ChatInputAreaState extends State<ChatInputArea> {
   String _budget = "Moderate";
   String _travelStyle = "General";
   String _interests = "Sightseeing";
+  bool _itineraryMode = false;
 
   /// Displays the interactive preference configuration dialog window
   void _showPreferencesDialog() {
@@ -207,7 +208,7 @@ class _ChatInputAreaState extends State<ChatInputArea> {
               controller: widget.inputController,
               onSubmitted: widget.isSending
                   ? null
-                  : (val) => widget.onSend(val, currentPreferences),
+                  : (val) => widget.onSend(val, currentPreferences, _itineraryMode),
               enabled: !widget.isSending,
               maxLines: 3,
               minLines: 1,
@@ -228,7 +229,23 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                   borderRadius: BorderRadius.circular(14),
                   child: _buildPillButton(
                     Icons.person_outline,
-                    "Preferences ($_budget)",
+                    "Prefs ($_budget)",
+                  ),
+                ),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: widget.isSending
+                      ? null
+                      : () {
+                          setState(() {
+                            _itineraryMode = !_itineraryMode;
+                          });
+                        },
+                  borderRadius: BorderRadius.circular(14),
+                  child: _buildTogglePill(
+                    Icons.map_outlined,
+                    "Itinerary Mode",
+                    _itineraryMode,
                   ),
                 ),
                 const Spacer(),
@@ -272,7 +289,7 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                           onPressed: () {
                             final textMsg = widget.inputController.text.trim();
                             if (textMsg.isNotEmpty) {
-                              widget.onSend(textMsg, currentPreferences);
+                              widget.onSend(textMsg, currentPreferences, _itineraryMode);
                             }
                           },
                         ),
@@ -287,7 +304,7 @@ class _ChatInputAreaState extends State<ChatInputArea> {
 
   Widget _buildPillButton(IconData icon, String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.06), // Frosted glass pill button
         borderRadius: BorderRadius.circular(14),
@@ -303,6 +320,43 @@ class _ChatInputAreaState extends State<ChatInputArea> {
               fontSize: 12,
               fontWeight: FontWeight.w500,
               color: Colors.white70,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTogglePill(IconData icon, String label, bool isActive) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: isActive 
+            ? const Color(0xFF6155F5).withValues(alpha: 0.15)
+            : Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isActive 
+              ? const Color(0xFF818CF8) 
+              : Colors.white10,
+          width: isActive ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon, 
+            size: 16, 
+            color: isActive ? const Color(0xFF818CF8) : Colors.white54,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: isActive ? Colors.white : Colors.white70,
             ),
           ),
         ],

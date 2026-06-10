@@ -17,8 +17,9 @@ from utilities.chat_history import get_session_history
 from langchain_core.messages import HumanMessage, AIMessage
 from database.supabase import get_user_prefs
 from agent.rag import agent_with_manual_history
-from models.schemas import ChatRequest
+from models.schemas import ChatRequest, UpdateItineraryRequest
 from config.config import supabase, llm
+from agent.planner import generate_structured_itinerary
 
 # Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -47,6 +48,75 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.post("/api/itinerary/update")
+async def update_itinerary(request: UpdateItineraryRequest):
+    try:
+        session_id = request.session_id
+        new_json = request.itinerary_json
+        
+        # Fetch the most recent messages in this session
+        res = supabase.table("chat_messages")\
+            .select("id, role, content")\
+            .eq("session_id", session_id)\
+            .order("created_at", desc=True)\
+            .limit(5)\
+            .execute()
+        
+        if not res.data:
+            raise HTTPException(status_code=404, detail="No messages found in this session.")
+        
+        # Look for the last bot message
+        target_message = None
+        for msg in res.data:
+            if msg["role"] == "bot":
+                target_message = msg
+                break
+        
+        if not target_message:
+            raise HTTPException(status_code=404, detail="No bot message found to update.")
+        
+        # Update the message content
+        supabase.table("chat_messages")\
+            .update({"content": new_json})\
+            .eq("id", target_message["id"])\
+            .execute()
+            
+        logger.info(f"Successfully updated itinerary message {target_message['id']} for session {session_id}")
+        return {"status": "ok", "message": "Itinerary updated successfully."}
+        
+    except Exception as e:
+        logger.error(f"Error updating itinerary: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update itinerary: {str(e)}")
+
+async def update_session_title_from_response(session_id: str, ai_response: str):
+    try:
+        session_check = supabase.table("chat_sessions").select("title").eq("id", session_id).execute()
+        if session_check.data:
+            current_title = session_check.data[0].get("title", "")
+            is_placeholder = (
+                current_title.startswith("New Trip") or 
+                current_title.startswith("New Chat Session") or 
+                current_title in ["", None]
+            )
+            if is_placeholder:
+                summary_prompt = (
+                    f"You are a summarization tool. Summarize the topic of this travel agent's response in exactly 3 to 4 words. "
+                    f"Examples: 'Batu Caves Tour', 'KL Cafe Guide', 'Budget Trip Planning'.\n"
+                    f"Response: {ai_response[:600]}\n"
+                    f"Title: "
+                )
+                summary_res = await llm.ainvoke(summary_prompt)
+                smart_title = summary_res.content.strip().strip('"').strip("'").strip()
+                
+                # Truncate just in case
+                if len(smart_title) > 40:
+                    smart_title = f"{smart_title[:37]}..."
+                
+                supabase.table("chat_sessions").update({"title": smart_title}).eq("id", session_id).execute()
+                logger.info(f"Upgraded session {session_id} title to: '{smart_title}' based on AI response.")
+    except Exception as e:
+        logger.error(f"Failed to auto-update session title: {e}")
+
 @app.post("/api/chat")
 async def chatbot_with_drift(request: ChatRequest):
     try:
@@ -55,6 +125,45 @@ async def chatbot_with_drift(request: ChatRequest):
             active_session_id = str(uuid.uuid4())
             logger.info(f"Generated fresh session ID for new thread: {active_session_id}")
         
+        if request.is_itinerary_mode:
+            logger.info("Explicit Itinerary Mode triggered. Running planner agent...")
+            raw_user_message = request.message
+            if request.prefs_context and request.prefs_context.strip() != "":
+                prefs_context = request.prefs_context
+            else:
+                prefs_context = "Budget: Moderate, Style: General, Interests: Sightseeing"
+            
+            # Generate the structured itinerary
+            itinerary_data = await generate_structured_itinerary(raw_user_message, prefs_context)
+            itinerary_str = json.dumps(itinerary_data)
+
+            # Auto-create or save session
+            dest = itinerary_data.get("destination", "KL")
+            smart_title = f"Trip to {dest}"
+            session_check = supabase.table("chat_sessions").select("id, title").eq("id", active_session_id).execute()
+            if not session_check.data:
+                supabase.table("chat_sessions").insert({
+                    "id": active_session_id,
+                    "user_id": request.user_id,
+                    "title": smart_title
+                }).execute()
+            else:
+                current_title = session_check.data[0].get("title", "")
+                if current_title.startswith("New Chat") or current_title.startswith("New Trip") or current_title in ["", None]:
+                    supabase.table("chat_sessions").update({"title": smart_title}).eq("id", active_session_id).execute()
+            
+            # Save to chat history
+            history_manager = await get_session_history(active_session_id)
+            await history_manager.aadd_messages([
+                HumanMessage(content=raw_user_message),
+                AIMessage(content=itinerary_str)
+            ])
+
+            async def itinerary_stream():
+                yield f"data: {json.dumps({'type': 'itinerary', 'data': itinerary_data, 'session_id': active_session_id})}\n\n"
+            
+            return StreamingResponse(itinerary_stream(), media_type="text/event-stream")
+
         router_task = asyncio.create_task(router_chain.ainvoke({"input": request.message}))
         route = await router_task
 
@@ -159,31 +268,17 @@ async def chatbot_with_drift(request: ChatRequest):
             prefs_context = "Budget: Moderate, Style: General, Interests: Sightseeing"
             logger.info(f"No mobile prefs transmitted. Using default fallback: {prefs_context}")
 
-        smart_title = generate_smart_title(request.message, max_length=30)
-
         session_check = supabase.table("chat_sessions").select("id").eq("id", active_session_id).execute()
         if not session_check.data:
             logger.info(f"Registering session {active_session_id} to chat_sessions table...")
             supabase.table("chat_sessions").insert({
                 "id": active_session_id,
                 "user_id": request.user_id,
-                "title": smart_title
+                "title": "New Chat Session"
             }).execute()
-        else:
-            current_title = session_check.data[0].get("title", "")
-            is_placeholder = (
-                current_title.startswith("New Trip") or 
-                current_title.startswith("New Chat Session") or 
-                current_title in ["", None]
-            )
-            
-            if is_placeholder:
-                logger.info(f"Upgrading placeholder title for session {active_session_id} to: '{smart_title}'")
-                supabase.table("chat_sessions").update({
-                    "title": smart_title
-                }).eq("id", active_session_id).execute()
 
         async def stream_wrapper():
+            full_reply_chunks = []
             try:
                 async for token in agent_with_manual_history(
                     user_message=processed_message, 
@@ -192,7 +287,14 @@ async def chatbot_with_drift(request: ChatRequest):
                     user_lat=request.user_lat,
                     user_lng=request.user_lng
                 ):
+                    full_reply_chunks.append(token)
                     yield f"data: {json.dumps({'text': token, 'session_id': active_session_id})}\n\n"
+                
+                # Assembled full response
+                full_reply = "".join(full_reply_chunks)
+                if full_reply.strip():
+                    asyncio.create_task(update_session_title_from_response(active_session_id, full_reply))
+                    
             except Exception as e:
                 logger.error(f"Stream interrupted: {e}")
                 yield f"data: {json.dumps({'error': 'stream_interrupted'})}\n\n"

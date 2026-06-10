@@ -9,6 +9,11 @@ class ChatRequest(BaseModel):
     user_lng: float | None = None
     radius_meters: float = 10000.0
     prefs_context: Optional[str] = None
+    is_itinerary_mode: bool = False
 
 class ChatResponse(BaseModel):
     reply: str
+
+class UpdateItineraryRequest(BaseModel):
+    session_id: str
+    itinerary_json: str
