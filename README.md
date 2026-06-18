@@ -34,8 +34,8 @@ Drift is a state-of-the-art AI-powered travel assistant and planner specializing
 
 ### Backend (API Gateway)
 * **Framework**: FastAPI (Python 3.12)
-* **Orchestration**: LangChain, LangGraph
-* **AI Engine**: Gemini (`gemini-3.1-flash-lite` via Google GenAI)
+* **Orchestration**: LangChain
+* **LLM Model**: Gemini (`gemini-3.1-flash-lite` via Google GenAI)
 * **Database & Vector Store**: Supabase (PostgreSQL with `pgvector` extension)
 * **Reranking Service**: Cohere Rerank API
 * **Web Search**: DuckDuckGo API integration
