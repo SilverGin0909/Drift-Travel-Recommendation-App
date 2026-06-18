@@ -133,8 +133,27 @@ async def chatbot_with_drift(request: ChatRequest):
             else:
                 prefs_context = "Budget: Moderate, Style: General, Interests: Sightseeing"
             
-            # Generate the structured itinerary
-            itinerary_data = await generate_structured_itinerary(raw_user_message, prefs_context)
+            # Fetch the most recent message in this session to check for an existing itinerary (scanning up to 20 messages)
+            existing_itinerary = None
+            try:
+                res = supabase.table("chat_messages")\
+                    .select("role, content")\
+                    .eq("session_id", active_session_id)\
+                    .order("created_at", desc=True)\
+                    .limit(20)\
+                    .execute()
+                
+                if res.data:
+                    for msg in res.data:
+                        if msg["role"] == "bot" and msg["content"].strip().startswith('{"destination":'):
+                            existing_itinerary = msg["content"]
+                            logger.info("Found existing itinerary in session history. Passing to planner for context-aware updates...")
+                            break
+            except Exception as hist_err:
+                logger.warning(f"Could not search chat history for existing itinerary: {hist_err}")
+
+            # Generate or update the structured itinerary
+            itinerary_data = await generate_structured_itinerary(raw_user_message, prefs_context, existing_itinerary)
             itinerary_str = json.dumps(itinerary_data)
 
             # Auto-create or save session

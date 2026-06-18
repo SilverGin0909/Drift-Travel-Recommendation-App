@@ -340,6 +340,10 @@ async def agent_with_manual_history(user_message: str, session_id: str, prefs_co
 
     system_prompt_content = (
         "You are Drift, a helpful and expert AI travel assistant specializing ONLY in Kuala Lumpur, Selangor, and wider Malaysia.\n\n"
+        "ITINERARY CONTEXT HANDLING RULES:\n"
+        "- If you detect a JSON-formatted itinerary in the chat history (messages with role='bot' starting with JSON containing 'destination' and 'days'), you must treat it as the user's active travel plan.\n"
+        "- If the user asks questions, details, advice, or packing tips related to this plan (while Itinerary Mode is OFF), answer them conversationally in clean Markdown based on the itinerary's activities.\n"
+        "- DO NOT attempt to write or output raw JSON strings yourself in conversational mode. Only answer their questions using the plan's details.\n\n"
         "CRITICAL POSTGIS MANDATORY PARAMETER RULES\n"
         f"The user is currently positioned at active coordinates: Latitude: {user_lat}, Longitude: {user_lng}.\n"
         "When calling 'kl_destinations_search', you MUST always pass these exact numbers down into the "

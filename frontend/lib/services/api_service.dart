@@ -11,7 +11,7 @@ class ApiService {
     String? prefsContext,
     bool isItineraryMode = false,
   }) async {
-    final String backendUrl = "http://10.0.2.2:8000/api/chat";
+    final String backendUrl = "http://192.168.0.10:8000/api/chat";
     final request = http.Request('POST', Uri.parse(backendUrl));
     request.headers['Content-Type'] = 'application/json';
     request.body = jsonEncode({
@@ -33,7 +33,7 @@ class ApiService {
     required String sessionId,
     required String itineraryJson,
   }) async {
-    final String backendUrl = "http://10.0.2.2:8000/api/itinerary/update";
+    final String backendUrl = "http://192.168.0.10:8000/api/itinerary/update";
     return await http.post(
       Uri.parse(backendUrl),
       headers: {'Content-Type': 'application/json'},
