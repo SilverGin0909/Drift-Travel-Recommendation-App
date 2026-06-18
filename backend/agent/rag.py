@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from config import config
 from utilities.chat_history import get_session_history
+from utilities.geospatial import get_closest_neighborhood
 
 # 1. Logging to watch the agent's internal thought process
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -334,6 +335,7 @@ async def agent_with_manual_history(user_message: str, session_id: str, prefs_co
     old_messages = await history_manager.aget_messages()
     logger.info(f"Successfully compiled conversation log. Loaded previous messages count: {len(old_messages)}")
 
+    user_neighborhood = get_closest_neighborhood(user_lat, user_lng)
     full_response = ""
     
     tools = [kl_destinations_search, get_restaurant_reviews, kl_events_and_festivals_search, kl_accommodations_search]
@@ -345,7 +347,7 @@ async def agent_with_manual_history(user_message: str, session_id: str, prefs_co
         "- If the user asks questions, details, advice, or packing tips related to this plan (while Itinerary Mode is OFF), answer them conversationally in clean Markdown based on the itinerary's activities.\n"
         "- DO NOT attempt to write or output raw JSON strings yourself in conversational mode. Only answer their questions using the plan's details.\n\n"
         "CRITICAL POSTGIS MANDATORY PARAMETER RULES\n"
-        f"The user is currently positioned at active coordinates: Latitude: {user_lat}, Longitude: {user_lng}.\n"
+        f"The user is currently positioned in the neighborhood of '{user_neighborhood}' at coordinates: Latitude: {user_lat}, Longitude: {user_lng}.\n"
         "When calling 'kl_destinations_search', you MUST always pass these exact numbers down into the "
         f"user_lat ({user_lat}) and user_lng ({user_lng}) parameters without exception.\n\n"
         "TOOL SELECTION RESTRICTIONS:\n"

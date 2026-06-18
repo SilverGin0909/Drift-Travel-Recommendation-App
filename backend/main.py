@@ -20,6 +20,7 @@ from agent.rag import agent_with_manual_history
 from models.schemas import ChatRequest, UpdateItineraryRequest
 from config.config import supabase, llm
 from agent.planner import generate_structured_itinerary
+from utilities.geospatial import get_closest_neighborhood
 
 # Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -240,6 +241,7 @@ async def chatbot_with_drift(request: ChatRequest):
 
             lat_val = request.user_lat if request.user_lat is not None else 3.1390
             lng_val = request.user_lng if request.user_lng is not None else 101.6869
+            user_neighborhood = get_closest_neighborhood(lat_val, lng_val)
 
             optimization_prompt = (
                 f"You are a search query optimizer for a Malaysian travel and food chatbot.\n"
@@ -256,7 +258,8 @@ async def chatbot_with_drift(request: ChatRequest):
                 
                 f"GEOSPATIAL TELEMETRY CONTEXT:\n"
                 f"- User Coordinates: Latitude: {lat_val}, Longitude: {lng_val}.\n"
-                f"- If proximity is implied, resolve it to a neighborhood name (e.g., 'Bukit Bintang', 'Cyberjaya').\n\n"
+                f"- User Location Name: {user_neighborhood}.\n"
+                f"- If proximity is implied, resolve it to the user's location neighborhood name ('{user_neighborhood}').\n\n"
                 
                 f"Chat History Context:\n{history_context or 'No prior history'}\n\n"
                 f"New Raw User Message: {raw_user_message}\n\n"
