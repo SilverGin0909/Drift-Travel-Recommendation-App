@@ -115,7 +115,11 @@ class ChatbotState extends State<Chatbot> {
     }
   }
 
-  Future<void> _handleSend(String text, Map<String, String> preferences, bool itineraryMode) async {
+  Future<void> _handleSend(
+    String text,
+    Map<String, String> preferences,
+    bool itineraryMode,
+  ) async {
     if (text.trim().isEmpty || _isSending) return;
 
     final userID = Supabase.instance.client.auth.currentUser!.id;
@@ -147,9 +151,10 @@ class ChatbotState extends State<Chatbot> {
       if (response.statusCode == 200) {
         if (itineraryMode) {
           // Itinerary Mode: wait for the structured JSON response stream packet
-          await for (var line in response.stream
-              .transform(utf8.decoder)
-              .transform(const LineSplitter())) {
+          await for (var line
+              in response.stream
+                  .transform(utf8.decoder)
+                  .transform(const LineSplitter())) {
             if (line.startsWith('data: ')) {
               final data = jsonDecode(line.substring(6));
 
@@ -174,18 +179,22 @@ class ChatbotState extends State<Chatbot> {
                 _scrollToBottom();
 
                 if (mounted) {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => ItineraryViewer(
-                        itinerary: itineraryData as Map<String, dynamic>,
-                        sessionId: _currentSessionId!,
-                      ),
-                    ),
-                  ).then((hasChanged) {
-                    if (hasChanged == true && _currentSessionId != null && mounted) {
-                      _loadChatMessages(_currentSessionId!);
-                    }
-                  });
+                  Navigator.of(context)
+                      .push(
+                        MaterialPageRoute(
+                          builder: (context) => ItineraryViewer(
+                            itinerary: itineraryData as Map<String, dynamic>,
+                            sessionId: _currentSessionId!,
+                          ),
+                        ),
+                      )
+                      .then((hasChanged) {
+                        if (hasChanged == true &&
+                            _currentSessionId != null &&
+                            mounted) {
+                          _loadChatMessages(_currentSessionId!);
+                        }
+                      });
                 }
                 break;
               }
@@ -200,9 +209,10 @@ class ChatbotState extends State<Chatbot> {
 
           int botIndex = _messages.length - 1;
 
-          await for (var line in response.stream
-              .transform(utf8.decoder)
-              .transform(const LineSplitter())) {
+          await for (var line
+              in response.stream
+                  .transform(utf8.decoder)
+                  .transform(const LineSplitter())) {
             if (line.startsWith('data: ')) {
               final data = jsonDecode(line.substring(6));
 
@@ -263,8 +273,8 @@ class ChatbotState extends State<Chatbot> {
 
         await _scrollController.animateTo(
           position.maxScrollExtent,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutQuint,
         );
       } catch (e) {
         debugPrint("Scroll animation interrupted: $e");
@@ -327,10 +337,8 @@ class ChatbotState extends State<Chatbot> {
       ),
       body: Stack(
         children: [
-          // 1. BACKGROUND GLOW EFFECTS
           BackgroundGlow(isThinking: _isTyping || _isSending),
 
-          // 2. MAIN CONTENT
           Column(
             children: [
               SafeArea(
@@ -380,7 +388,6 @@ class ChatbotState extends State<Chatbot> {
         final msg = _messages[index];
         final isUser = msg["role"] == "user";
 
-        // 1. USER STYLE: THE BUBBLE
         if (isUser) {
           return UserMessageBubble(text: msg["text"] ?? "");
         }
@@ -423,7 +430,7 @@ class ItineraryPreviewCard extends StatelessWidget {
       final destination = data['destination'] ?? "Trip Plan";
       final days = data['days'] as List<dynamic>? ?? [];
       final totalDays = data['duration_days'] ?? days.length;
-      
+
       int totalActivities = 0;
       for (var day in days) {
         if (day['activities'] != null) {
@@ -437,7 +444,10 @@ class ItineraryPreviewCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFF6155F5).withValues(alpha: 0.3), width: 1.5),
+          border: Border.all(
+            color: const Color(0xFF6155F5).withValues(alpha: 0.3),
+            width: 1.5,
+          ),
           boxShadow: [
             BoxShadow(
               color: const Color(0xFF6155F5).withValues(alpha: 0.05),
@@ -457,7 +467,11 @@ class ItineraryPreviewCard extends StatelessWidget {
                     color: const Color(0xFF6155F5).withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.map_outlined, color: Color(0xFF818CF8), size: 22),
+                  child: const Icon(
+                    Icons.map_outlined,
+                    color: Color(0xFF818CF8),
+                    size: 22,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -491,8 +505,14 @@ class ItineraryPreviewCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildInfoColumn(Icons.calendar_today_rounded, "$totalDays Days"),
-                _buildInfoColumn(Icons.alt_route_rounded, "$totalActivities Stops"),
+                _buildInfoColumn(
+                  Icons.calendar_today_rounded,
+                  "$totalDays Days",
+                ),
+                _buildInfoColumn(
+                  Icons.alt_route_rounded,
+                  "$totalActivities Stops",
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -502,31 +522,43 @@ class ItineraryPreviewCard extends StatelessWidget {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6155F5),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   elevation: 2,
                 ),
                 onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => ItineraryViewer(
-                        itinerary: data,
-                        sessionId: sessionId,
-                      ),
-                    ),
-                  ).then((hasChanged) {
-                    if (hasChanged == true) {
-                      onReload();
-                    }
-                  });
+                  Navigator.of(context)
+                      .push(
+                        MaterialPageRoute(
+                          builder: (context) => ItineraryViewer(
+                            itinerary: data,
+                            sessionId: sessionId,
+                          ),
+                        ),
+                      )
+                      .then((hasChanged) {
+                        if (hasChanged == true) {
+                          onReload();
+                        }
+                      });
                 },
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.edit_road_rounded, color: Colors.white, size: 18),
+                    Icon(
+                      Icons.edit_road_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                     SizedBox(width: 8),
                     Text(
                       "View & Edit Itinerary",
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ),
@@ -547,7 +579,11 @@ class ItineraryPreviewCard extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           value,
-          style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ],
     );

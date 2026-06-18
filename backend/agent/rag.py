@@ -46,7 +46,7 @@ def get_restaurant_reviews(restaurant_name: str):
         return "Could not retrieve live web reviews."
     
 @tool
-def kl_accommodations_search(query: str, cost_tier: str = None, sub_category: str = None) -> str:
+def kl_accommodations_search(query: str, user_lat: float, user_lng: float, cost_tier: str = None, sub_category: str = None) -> str:
     """
     Search strictly for places to stay overnight, lodging, and hospitality venues in Malaysia.
     
@@ -60,7 +60,7 @@ def kl_accommodations_search(query: str, cost_tier: str = None, sub_category: st
     - cost_tier (str): Optional budget flag. Pass strictly: 'budget', 'moderate', or 'luxury' if inferred.
     - sub_category (str): Optional specific type. Pass strictly: 'Hostel', 'Hotel', or 'Service apartment'.
     """
-    logger.info(f"ACCOMMODATION ROUTER - Executing query: '{query}' | Tier: {cost_tier} | Sub: {sub_category}")
+    logger.info(f"ACCOMMODATION ROUTER - Executing query: '{query}' | Lat: {user_lat} | Lng: {user_lng} | Tier: {cost_tier} | Sub: {sub_category}")
     
     try:
         query_vector = config.embeddings.embed_query(query)
@@ -68,6 +68,9 @@ def kl_accommodations_search(query: str, cost_tier: str = None, sub_category: st
         rpc_args = {
             "query_text": query,
             "query_embedding": query_vector,
+            "user_lat": float(user_lat),
+            "user_lng": float(user_lng),
+            "radius_meters": 12000.0,
             "cost_tier_filter": cost_tier if cost_tier else None,
             "subcategory_filter": sub_category if sub_category else None,
             "match_count": 10
@@ -203,7 +206,7 @@ def kl_destinations_search(query: str, user_lat: float, user_lng: float, categor
                 )
             except Exception as web_err:
                 logger.error(f"DuckDuckGo concurrent fallback failed: {str(web_err)}") #
-                return "No matching database metrics found, and fallback live search nodes are overloaded." #
+                return "No matching database metrics found, and fallback live search nodes are overloaded."
         
         logger.info(f"Retrieved {len(docs)} raw entries from database. Transferring to Cohere Rerank...")
 
@@ -343,7 +346,7 @@ async def agent_with_manual_history(user_message: str, session_id: str, prefs_co
         f"user_lat ({user_lat}) and user_lng ({user_lng}) parameters without exception.\n\n"
         "TOOL SELECTION RESTRICTIONS:\n"
         "- Trigger 'kl_destinations_search' for all daytime sightseeing, cafes, dinner spots, spas, and malls.\n"
-        "- Trigger 'kl_accommodations_search' if a user asks for an overnight hotel, lodging, or place to sleep.\n"
+        "- Trigger 'kl_accommodations_search' if a user asks for an overnight hotel, lodging, or place to sleep, and pass user_lat and user_lng down.\n"
         "- Immediately after retrieving the destinations, use each destination's name to perform a web search "
         f"using the 'get_restaurant_reviews' tool for reviews and recommendations.\n"
         "PERSONALIZATION LOGIC:\n"

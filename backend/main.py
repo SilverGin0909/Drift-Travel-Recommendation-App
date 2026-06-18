@@ -219,6 +219,9 @@ async def chatbot_with_drift(request: ChatRequest):
             
             pure_text_llm = llm.bind(tools=[])
 
+            lat_val = request.user_lat if request.user_lat is not None else 3.1390
+            lng_val = request.user_lng if request.user_lng is not None else 101.6869
+
             optimization_prompt = (
                 f"You are a search query optimizer for a Malaysian travel and food chatbot.\n"
                 f"Convert the raw user message into a clean, natural English search query optimized for a vector database.\n\n"
@@ -227,11 +230,13 @@ async def chatbot_with_drift(request: ChatRequest):
                 f"- Today's Date is strictly: {current_time_str}\n\n"
                 
                 f"TEMPORAL CONTEXT RULES:\n"
-                f"1. If the user asks for events 'recently', 'now', or 'today', they want things happening immediately. Clean the query tokens to focus on broad event types (e.g., 'concerts', 'festivals', 'shows') and strip out the words 'recently' or 'today'.\n"
-                f"2. If the user follows up with 'what about future events', look at the Chat History to see what event types they were interested in. If they didn't specify a type, use broad keywords like 'festivals exhibitions concerts'. NEVER output the words 'future' or 'events' as search tokens.\n\n"
+                f"1. If the user asks for events 'recently', 'now', or 'today', they want things happening immediately. "
+                "Clean the query tokens to focus on broad event types (e.g., 'concerts', 'festivals', 'shows') and strip out the words 'recently' or 'today'.\n"
+                f"2. If the user follows up with 'what about future events', look at the Chat History to see what event types they were interested in. "
+                "If they didn't specify a type, use broad keywords like 'festivals exhibitions concerts'. NEVER output the words 'future' or 'events' as search tokens.\n\n"
                 
                 f"GEOSPATIAL TELEMETRY CONTEXT:\n"
-                f"- User Coordinates: Latitude: {request.latitude}, Longitude: {request.longitude}.\n"
+                f"- User Coordinates: Latitude: {lat_val}, Longitude: {lng_val}.\n"
                 f"- If proximity is implied, resolve it to a neighborhood name (e.g., 'Bukit Bintang', 'Cyberjaya').\n\n"
                 
                 f"Chat History Context:\n{history_context or 'No prior history'}\n\n"
@@ -284,8 +289,8 @@ async def chatbot_with_drift(request: ChatRequest):
                     user_message=processed_message, 
                     session_id=active_session_id, 
                     prefs_context=prefs_context,
-                    user_lat=request.user_lat,
-                    user_lng=request.user_lng
+                    user_lat=lat_val,
+                    user_lng=lng_val
                 ):
                     full_reply_chunks.append(token)
                     yield f"data: {json.dumps({'text': token, 'session_id': active_session_id})}\n\n"
