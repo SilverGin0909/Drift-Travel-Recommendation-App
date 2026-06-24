@@ -7,12 +7,14 @@ class ChatInputArea extends StatefulWidget {
 
   /// Updated callback to pass the native message string along with the current preferences payload matrix and itinerary mode
   final Function(String message, Map<String, String> preferences, bool isItineraryMode) onSend;
+  final VoidCallback? onStop;
 
   const ChatInputArea({
     super.key,
     required this.inputController,
     required this.isSending,
     required this.onSend,
+    this.onStop,
   });
 
   @override
@@ -313,14 +315,14 @@ class _ChatInputAreaState extends State<ChatInputArea> {
                     ],
                   ),
                   child: widget.isSending
-                      ? const Padding(
-                          padding: EdgeInsets.all(10.0),
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
+                      ? IconButton(
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(
+                            Icons.stop_rounded,
+                            color: Colors.white,
+                            size: 22,
                           ),
+                          onPressed: widget.onStop,
                         )
                       : IconButton(
                           padding: EdgeInsets.zero,

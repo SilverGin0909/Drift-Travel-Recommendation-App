@@ -3,15 +3,16 @@ import 'package:frontend/screens/login.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:frontend/widgets/custom_toast.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
 
   @override
-  State<SignupPage> createState() => SignupPage_State();
+  State<SignupPage> createState() => _SignupPageState();
 }
 
-class SignupPage_State extends State<SignupPage> {
+class _SignupPageState extends State<SignupPage> {
   final TextEditingController username = TextEditingController();
   final TextEditingController email = TextEditingController();
   final TextEditingController password = TextEditingController();
@@ -213,6 +214,52 @@ class SignupPage_State extends State<SignupPage> {
   }
 
   Future<void> signUpUser() async {
+    final localContext = context;
+    final usernameText = username.text.trim();
+    final emailText = email.text.trim();
+    final passwordText = password.text;
+
+    if (usernameText.isEmpty) {
+      CustomToast.show(context, "Username cannot be empty");
+      return;
+    }
+
+    if (emailText.isEmpty) {
+      CustomToast.show(context, "Email cannot be empty");
+      return;
+    }
+
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@gmail\.com$');
+    if (!emailRegex.hasMatch(emailText)) {
+      CustomToast.show(context, "Please enter a valid Gmail address (ending in @gmail.com)");
+      return;
+    }
+
+    if (passwordText.isEmpty) {
+      CustomToast.show(context, "Password cannot be empty");
+      return;
+    }
+
+    if (passwordText.length < 8) {
+      CustomToast.show(context, "Password must be at least 8 characters long");
+      return;
+    }
+
+    if (!passwordText.contains(RegExp(r'[A-Z]'))) {
+      CustomToast.show(context, "Password must contain at least one uppercase letter");
+      return;
+    }
+
+    if (!passwordText.contains(RegExp(r'[a-z]'))) {
+      CustomToast.show(context, "Password must contain at least one lowercase letter");
+      return;
+    }
+
+    if (!passwordText.contains(RegExp(r'[^a-zA-Z0-9]'))) {
+      CustomToast.show(context, "Password must contain at least one symbol");
+      return;
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -221,36 +268,27 @@ class SignupPage_State extends State<SignupPage> {
 
     try {
       final response = await Supabase.instance.client.auth.signUp(
-        email: email.text.trim(),
-        password: password.text.trim(),
-        data: {'username': username.text.trim()},
+        email: emailText,
+        password: passwordText,
+        data: {'username': usernameText},
       );
 
-      if (mounted) Navigator.pop(context);
+      if (localContext.mounted) Navigator.pop(localContext);
 
       if (response.user != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              "Signup successful! Please check your email for confirmation.",
-            ),
-          ),
-        );
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const Chatbot()),
-        );
+        if (localContext.mounted) {
+          CustomToast.show(localContext, "Signup successful! Please check your email for confirmation.");
+          Navigator.pushReplacement(
+            localContext,
+            MaterialPageRoute(builder: (context) => const Chatbot()),
+          );
+        }
       }
     } catch (e) {
-      if (mounted) Navigator.pop(context); // Remove loading indicator
-
-      // Show the actual error to the user
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Signup failed: ${e.toString()}"),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (localContext.mounted) {
+        Navigator.pop(localContext); // Remove loading indicator
+        CustomToast.show(localContext, "Signup failed: ${e.toString()}");
+      }
     }
   }
 }

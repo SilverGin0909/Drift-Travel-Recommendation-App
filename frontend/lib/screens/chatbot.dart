@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:frontend/services/location_service.dart';
 import 'dart:convert';
+import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -40,6 +41,10 @@ class ChatbotState extends State<Chatbot> {
 
   String? _currentSessionId;
   String _thinkingText = "Thinking...";
+
+  StreamSubscription<String>? _chatStreamSubscription;
+  Completer<void>? _streamCompleter;
+
   Map<String, String> _lastPreferences = {
     "budget": "Moderate",
     "style": "General",
@@ -303,6 +308,21 @@ class ChatbotState extends State<Chatbot> {
     }
   }
 
+  void _stopGeneration() {
+    if (_chatStreamSubscription != null) {
+      _chatStreamSubscription!.cancel();
+      _chatStreamSubscription = null;
+    }
+    if (_streamCompleter != null && !_streamCompleter!.isCompleted) {
+      _streamCompleter!.complete();
+      _streamCompleter = null;
+    }
+    setState(() {
+      _isTyping = false;
+      _isSending = false;
+    });
+  }
+
   Future<void> _handleSend(
     String text,
     Map<String, String> preferences,
@@ -346,119 +366,152 @@ class ChatbotState extends State<Chatbot> {
 
       if (response.statusCode == 200) {
         if (itineraryMode) {
-          // Itinerary Mode: wait for the structured JSON response stream packet
           int? botIndex;
-          
-          await for (var line
-              in response.stream
-                  .transform(utf8.decoder)
-                  .transform(const LineSplitter())) {
-            if (line.startsWith('data: ')) {
-              final data = jsonDecode(line.substring(6));
+          final stream = response.stream
+              .transform(utf8.decoder)
+              .transform(const LineSplitter());
 
-              if (data.containsKey('session_id')) {
-                final String receivedId = data['session_id'];
-                if (_currentSessionId != receivedId) {
-                  setState(() {
-                    _currentSessionId = receivedId;
-                  });
+          _streamCompleter = Completer<void>();
+          _chatStreamSubscription = stream.listen(
+            (line) {
+              if (line.startsWith('data: ')) {
+                final data = jsonDecode(line.substring(6));
+
+                if (data.containsKey('session_id')) {
+                  final String receivedId = data['session_id'];
+                  if (_currentSessionId != receivedId) {
+                    setState(() {
+                      _currentSessionId = receivedId;
+                    });
+                  }
                 }
-              }
 
-              if (data.containsKey('status')) {
-                final String statusVal = data['status'];
-                if (statusVal == 'searching') {
+                if (data.containsKey('status')) {
+                  final String statusVal = data['status'];
+                  if (statusVal == 'searching') {
+                    setState(() {
+                      _thinkingText = "Searching KL for you...";
+                    });
+                  }
+                } else if (data.containsKey('type') && data['type'] == 'itinerary') {
+                  final itineraryData = data['data'];
                   setState(() {
-                    _thinkingText = "Searching KL for you...";
+                    _isTyping = false;
+                    _messages.add({
+                      "role": "bot",
+                      "text": jsonEncode(itineraryData),
+                    });
                   });
-                }
-              } else if (data.containsKey('type') && data['type'] == 'itinerary') {
-                final itineraryData = data['data'];
-                setState(() {
-                  _isTyping = false;
-                  _messages.add({
-                    "role": "bot",
-                    "text": jsonEncode(itineraryData),
-                  });
-                });
-                _scrollToBottom();
+                  _scrollToBottom();
 
-                if (mounted) {
-                  Navigator.of(context)
-                      .push(
-                        MaterialPageRoute(
-                          builder: (context) => ItineraryViewer(
-                            itinerary: itineraryData as Map<String, dynamic>,
-                            sessionId: _currentSessionId!,
+                  if (mounted) {
+                    Navigator.of(context)
+                        .push(
+                          MaterialPageRoute(
+                            builder: (context) => ItineraryViewer(
+                              itinerary: itineraryData as Map<String, dynamic>,
+                              sessionId: _currentSessionId!,
+                            ),
                           ),
-                        ),
-                      )
-                      .then((hasChanged) {
-                        if (hasChanged == true &&
-                            _currentSessionId != null &&
-                            mounted) {
-                          _loadChatMessages(_currentSessionId!);
-                        }
-                      });
-                }
-                break;
-              } else if (data.containsKey('text')) {
-                setState(() {
-                  _isTyping = false;
-                  if (botIndex == null) {
-                    _messages.add({"role": "bot", "text": data['text']});
-                    botIndex = _messages.length - 1;
-                  } else {
-                    _messages[botIndex!]["text"] =
-                        _messages[botIndex!]["text"]! + data['text'];
+                        )
+                        .then((hasChanged) {
+                          if (hasChanged == true &&
+                              _currentSessionId != null &&
+                              mounted) {
+                            _loadChatMessages(_currentSessionId!);
+                          }
+                        });
                   }
-                });
-                _scrollToBottom();
+                  _chatStreamSubscription?.cancel();
+                  if (_streamCompleter != null && !_streamCompleter!.isCompleted) {
+                    _streamCompleter!.complete();
+                  }
+                } else if (data.containsKey('text')) {
+                  setState(() {
+                    _isTyping = false;
+                    if (botIndex == null) {
+                      _messages.add({"role": "bot", "text": data['text']});
+                      botIndex = _messages.length - 1;
+                    } else {
+                      _messages[botIndex!]["text"] =
+                          _messages[botIndex!]["text"]! + data['text'];
+                    }
+                  });
+                  _scrollToBottom();
+                }
               }
-            }
-          }
+            },
+            onError: (error) {
+              if (_streamCompleter != null && !_streamCompleter!.isCompleted) {
+                _streamCompleter!.completeError(error);
+              }
+            },
+            onDone: () {
+              if (_streamCompleter != null && !_streamCompleter!.isCompleted) {
+                _streamCompleter!.complete();
+              }
+            },
+            cancelOnError: true,
+          );
+
+          await _streamCompleter!.future;
         } else {
-          // Standard conversational streaming mode
           int? botIndex;
+          final stream = response.stream
+              .transform(utf8.decoder)
+              .transform(const LineSplitter());
 
-          await for (var line
-              in response.stream
-                  .transform(utf8.decoder)
-                  .transform(const LineSplitter())) {
-            if (line.startsWith('data: ')) {
-              final data = jsonDecode(line.substring(6));
+          _streamCompleter = Completer<void>();
+          _chatStreamSubscription = stream.listen(
+            (line) {
+              if (line.startsWith('data: ')) {
+                final data = jsonDecode(line.substring(6));
 
-              if (data.containsKey('session_id')) {
-                final String receivedId = data['session_id'];
-                if (_currentSessionId != receivedId) {
-                  setState(() {
-                    _currentSessionId = receivedId;
-                  });
-                }
-              }
-
-              if (data.containsKey('status')) {
-                final String statusVal = data['status'];
-                if (statusVal == 'searching') {
-                  setState(() {
-                    _thinkingText = "Searching KL for you...";
-                  });
-                }
-              } else if (data.containsKey('text')) {
-                setState(() {
-                  _isTyping = false;
-                  if (botIndex == null) {
-                    _messages.add({"role": "bot", "text": data['text']});
-                    botIndex = _messages.length - 1;
-                  } else {
-                    _messages[botIndex!]["text"] =
-                        _messages[botIndex!]["text"]! + data['text'];
+                if (data.containsKey('session_id')) {
+                  final String receivedId = data['session_id'];
+                  if (_currentSessionId != receivedId) {
+                    setState(() {
+                      _currentSessionId = receivedId;
+                    });
                   }
-                });
-                _scrollToBottom();
+                }
+
+                if (data.containsKey('status')) {
+                  final String statusVal = data['status'];
+                  if (statusVal == 'searching') {
+                    setState(() {
+                      _thinkingText = "Searching KL for you...";
+                    });
+                  }
+                } else if (data.containsKey('text')) {
+                  setState(() {
+                    _isTyping = false;
+                    if (botIndex == null) {
+                      _messages.add({"role": "bot", "text": data['text']});
+                      botIndex = _messages.length - 1;
+                    } else {
+                      _messages[botIndex!]["text"] =
+                          _messages[botIndex!]["text"]! + data['text'];
+                    }
+                  });
+                  _scrollToBottom();
+                }
               }
-            }
-          }
+            },
+            onError: (error) {
+              if (_streamCompleter != null && !_streamCompleter!.isCompleted) {
+                _streamCompleter!.completeError(error);
+              }
+            },
+            onDone: () {
+              if (_streamCompleter != null && !_streamCompleter!.isCompleted) {
+                _streamCompleter!.complete();
+              }
+            },
+            cancelOnError: true,
+          );
+
+          await _streamCompleter!.future;
         }
       } else {
         throw Exception("Server error: ${response.statusCode}");
@@ -473,6 +526,8 @@ class ChatbotState extends State<Chatbot> {
         _isTyping = false;
       });
     } finally {
+      _chatStreamSubscription = null;
+      _streamCompleter = null;
       setState(() {
         _isSending = false;
       });
@@ -589,6 +644,7 @@ class ChatbotState extends State<Chatbot> {
             child: ChatInputArea(
               inputController: _inputController,
               isSending: _isSending,
+              onStop: _stopGeneration,
               onSend: (text, preferences, itineraryMode) {
                 _handleSend(text, preferences, itineraryMode);
               },

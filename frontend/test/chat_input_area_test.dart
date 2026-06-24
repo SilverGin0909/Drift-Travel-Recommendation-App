@@ -80,4 +80,34 @@ void main() {
     expect(sentMessage, 'Plan a 3 day trip');
     expect(sentItineraryMode, true);
   });
+
+  testWidgets('When isSending is true, stop button renders and triggers onStop',
+      (WidgetTester tester) async {
+    bool stopTriggered = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChatInputArea(
+            inputController: TextEditingController(),
+            isSending: true,
+            onSend: (message, preferences, isItineraryMode) {},
+            onStop: () {
+              stopTriggered = true;
+            },
+          ),
+        ),
+      ),
+    );
+
+    // Verify stop button renders (it has Icon(Icons.stop_rounded))
+    expect(find.byIcon(Icons.stop_rounded), findsOneWidget);
+
+    // Tap the stop button
+    await tester.tap(find.byIcon(Icons.stop_rounded));
+    await tester.pump();
+
+    // Verify onStop callback triggered
+    expect(stopTriggered, true);
+  });
 }
