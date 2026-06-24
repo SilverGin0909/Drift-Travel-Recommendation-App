@@ -28,98 +28,147 @@ class _ChatInputAreaState extends State<ChatInputArea> {
 
   /// Displays the interactive preference configuration dialog window
   void _showPreferencesDialog() {
-    // Temporary controllers to hold modifications prior to hitting the 'Save' gate
-    final budgetController = TextEditingController(text: _budget);
+    // Temporary variables to hold modifications prior to hitting the 'Save' gate
+    String tempBudget = _budget;
     final styleController = TextEditingController(text: _travelStyle);
     final interestsController = TextEditingController(text: _interests);
 
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF161622), // Deep dark modal background
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: const BorderSide(color: Colors.white10, width: 1),
-          ),
-          title: const Row(
-            children: [
-              Icon(Icons.tune_rounded, color: Color(0xFF818CF8)),
-              SizedBox(width: 10),
-              Text(
-                "Travel Preferences",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setStateDialog) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF161622), // Deep dark modal background
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: const BorderSide(color: Colors.white10, width: 1),
               ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildModalField(
-                  "Budget",
-                  budgetController,
-                  "e.g., Budget, Moderate, Luxury",
+              title: const Row(
+                children: [
+                  Icon(Icons.tune_rounded, color: Color(0xFF818CF8)),
+                  SizedBox(width: 10),
+                  Text(
+                    "Travel Preferences",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Budget",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: ["Budget", "Moderate", "Luxury"].map((option) {
+                        final bool isSelected = tempBudget == option;
+                        return Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isSelected
+                                    ? const Color(0xFF6155F5)
+                                    : Colors.white.withValues(alpha: 0.08),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  side: BorderSide(
+                                    color: isSelected
+                                        ? const Color(0xFF818CF8)
+                                        : Colors.transparent,
+                                    width: 1,
+                                  ),
+                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              onPressed: () {
+                                setStateDialog(() {
+                                  tempBudget = option;
+                                });
+                              },
+                              child: Text(
+                                option,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildModalField(
+                      "Travel Style",
+                      styleController,
+                      "e.g., Backpacker, Family, Solo",
+                    ),
+                    const SizedBox(height: 12),
+                    _buildModalField(
+                      "Interests",
+                      interestsController,
+                      "e.g., Food, Sightseeing, Nature",
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                _buildModalField(
-                  "Travel Style",
-                  styleController,
-                  "e.g., Backpacker, Family, Solo",
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text(
+                    "Cancel",
+                    style: TextStyle(color: Colors.white54),
+                  ),
                 ),
-                const SizedBox(height: 12),
-                _buildModalField(
-                  "Interests",
-                  interestsController,
-                  "e.g., Food, Sightseeing, Nature",
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF6155F5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _budget = tempBudget;
+                      _travelStyle = styleController.text.trim().isEmpty
+                          ? "General"
+                          : styleController.text.trim();
+                      _interests = interestsController.text.trim().isEmpty
+                          ? "Sightseeing"
+                          : interestsController.text.trim();
+                    });
+                    Navigator.of(
+                      context,
+                    ).pop(); // Closes dialog instantly upon saving
+                  },
+                  child: const Text(
+                    "Save",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text(
-                "Cancel",
-                style: TextStyle(color: Colors.white54),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6155F5),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
-                ),
-              ),
-              onPressed: () {
-                setState(() {
-                  _budget = budgetController.text.trim().isEmpty
-                      ? "Moderate"
-                      : budgetController.text.trim();
-                  _travelStyle = styleController.text.trim().isEmpty
-                      ? "General"
-                      : styleController.text.trim();
-                  _interests = interestsController.text.trim().isEmpty
-                      ? "Sightseeing"
-                      : interestsController.text.trim();
-                });
-                Navigator.of(
-                  context,
-                ).pop(); // Closes dialog instantly upon saving
-              },
-              child: const Text(
-                "Save",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
+            );
+          },
         );
       },
     );

@@ -11,7 +11,7 @@ class ApiService {
     String? prefsContext,
     bool isItineraryMode = false,
   }) async {
-    final String backendUrl = "http://192.168.0.10:8000/api/chat";
+    final String backendUrl = "http://192.168.0.7:8000/api/chat";
     final request = http.Request('POST', Uri.parse(backendUrl));
     request.headers['Content-Type'] = 'application/json';
     request.body = jsonEncode({

@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
 class ThinkingIndicator extends StatelessWidget {
-  const ThinkingIndicator({super.key});
+  final String text;
+  
+  const ThinkingIndicator({
+    super.key,
+    this.text = "Thinking...",
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +45,7 @@ class ThinkingIndicator extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        "Searching KL for you...",
+                        text,
                         style: TextStyle(
                           color: Colors.grey[400],
                           fontSize: 14,

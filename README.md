@@ -6,39 +6,41 @@ Drift is a state-of-the-art AI-powered travel assistant and planner specializing
 
 ## 🚀 Key Features
 
-* **Dual-Mode AI Interaction**:
-  * **Conversational Mode (Itinerary Mode OFF)**: Chat with Drift about local sights, packing tips, or travel details. The chatbot reads the active itinerary from the chat history and grounds its answers contextually.
-  * **Structured Planner Mode (Itinerary Mode ON)**: Automatically generates a structured travel itinerary or performs incremental updates (adding, deleting, or tweaking specific days/activities) based on conversational feedback.
-* **Geospatial Telemetry (Offline & Free)**:
-  * Uses a high-precision **Haversine formula** implementation to resolve coordinates to their nearest neighborhood name (e.g. *Sepang, KLIA, Cyberjaya, Bukit Bintang, Pudu, Chow Kit, Puchong, Sri Petaling, Damansara, Hartamas, Kuchai*).
-  * Runs entirely offline with zero latency, zero external API keys, and no rate-limit blocks (avoiding Google Maps charges and Nominatim `403` bans).
-* **Hybrid Search & Reranking**:
-  * Utilizes PostgreSQL `pgvector` in Supabase for vector-similarity search of local venues.
-  * Re-ranks results using the cloud-based **Cohere Rerank-v3.5** model for maximal query-to-document alignment.
-  * Falls back to multi-threaded **DuckDuckGo Search** query routing when database coverage is low.
-* **Security & Guardrails**:
-  * Structured input verification layers defending against prompt injections, SQL injections, and malicious payloads.
-* **Modern Premium UI**:
-  * Flutter mobile interface with breathing ambient glows, dark mode themes, automatic scroll controls, profile picture customization, and session history side drawers.
+- **Dual-Mode AI Interaction**:
+  - **Conversational Mode (Itinerary Mode OFF)**: Chat with Drift about local sights, packing tips, or travel details. The chatbot reads the active itinerary from the chat history and grounds its answers contextually.
+  - **Structured Planner Mode (Itinerary Mode ON)**: Automatically generates a structured travel itinerary or performs incremental updates (adding, deleting, or tweaking specific days/activities) based on conversational feedback.
+- **Geospatial Telemetry (Offline & Free)**:
+  - Uses a high-precision **Haversine formula** implementation to resolve coordinates to their nearest neighborhood name (e.g. _Sepang, KLIA, Cyberjaya, Bukit Bintang, Pudu, Chow Kit, Puchong, Sri Petaling, Damansara, Hartamas, Kuchai_).
+  - Runs entirely offline with zero latency, zero external API keys, and no rate-limit blocks (avoiding Google Maps charges and Nominatim `403` bans).
+- **Hybrid Search & Reranking**:
+  - Utilizes PostgreSQL `pgvector` in Supabase for vector-similarity search of local venues.
+  - Re-ranks results using the cloud-based **Cohere Rerank-v3.5** model for maximal query-to-document alignment.
+  - Falls back to multi-threaded **DuckDuckGo Search** query routing when database coverage is low.
+- **Security & Guardrails**:
+  - Structured input verification layers defending against prompt injections, SQL injections, and malicious payloads.
+- **Modern Premium UI**:
+  - Flutter mobile interface with breathing ambient glows, dark mode themes, automatic scroll controls, profile picture customization, and session history side drawers.
 
 ---
 
 ## 🛠️ Tech Stack
 
 ### Frontend (Mobile App)
-* **Framework**: Flutter (Dart)
-* **Telemetry**: Geolocator (GPS tracking & permission handler)
-* **Storage**: Shared Preferences (Local caching & Auto-login flags)
-* **Markdown Rendering**: `flutter_markdown_stream` for smooth text rendering of LLM responses
-* **State Management**: Stateful widget lifecycle with animated physics
+
+- **Framework**: Flutter (Dart)
+- **Telemetry**: Geolocator (GPS tracking & permission handler)
+- **Storage**: Shared Preferences (Local caching & Auto-login flags)
+- **Markdown Rendering**: `flutter_markdown_stream` for smooth text rendering of LLM responses
+- **State Management**: Stateful widget lifecycle with animated physics
 
 ### Backend (API Gateway)
-* **Framework**: FastAPI (Python 3.12)
-* **Orchestration**: LangChain, LangGraph
-* **AI Engine**: Gemini (`gemini-3.1-flash-lite` via Google GenAI)
-* **Database & Vector Store**: Supabase (PostgreSQL with `pgvector` extension)
-* **Reranking Service**: Cohere Rerank API
-* **Web Search**: DuckDuckGo API integration
+
+- **Framework**: FastAPI (Python 3.12)
+- **Orchestration**: LangChain
+- **AI Engine**: Gemini (`gemini-3.1-flash-lite` via Google GenAI)
+- **Database & Vector Store**: Supabase (PostgreSQL with `pgvector` extension)
+- **Reranking Service**: Cohere Rerank API
+- **Web Search**: DuckDuckGo API integration
 
 ---
 
@@ -76,12 +78,15 @@ travel_chatbot_workspace/
 ## ⚙️ Setup & Installation
 
 ### 1. Database Setup (Supabase)
+
 Create a Supabase project and set up the following database structures:
-* A `locations` table representing local sights, cafes, hotels, etc.
-* A `chat_sessions` and `chat_messages` table to persist historical threads.
-* Implement a PostgreSQL RPC function named `search_nearby_places_hybrid` which performs a cosine similarity calculation on `pgvector` embeddings filtered by latitude/longitude distance radius.
+
+- A `locations` table representing local sights, cafes, hotels, etc.
+- A `chat_sessions` and `chat_messages` table to persist historical threads.
+- Implement a PostgreSQL RPC function named `search_nearby_places_hybrid` which performs a cosine similarity calculation on `pgvector` embeddings filtered by latitude/longitude distance radius.
 
 ### 2. Backend Configuration
+
 1. Navigate to the backend directory and create a virtual environment:
    ```bash
    cd backend
@@ -102,6 +107,7 @@ Create a Supabase project and set up the following database structures:
    ```
 
 ### 3. Frontend Configuration
+
 1. Navigate to the frontend directory:
    ```bash
    cd ../frontend
@@ -123,7 +129,9 @@ Create a Supabase project and set up the following database structures:
 ## 🧪 Running Automated Tests
 
 ### Backend Unit & Security Tests
+
 Verify system security and geospatial boundary resolutions:
+
 ```bash
 # From the project root
 .venv/Scripts/python.exe backend/tests/test_geospatial.py
@@ -131,7 +139,9 @@ Verify system security and geospatial boundary resolutions:
 ```
 
 ### Frontend Widget Tests
+
 Verify component state changes and UI layout:
+
 ```bash
 cd frontend
 flutter test

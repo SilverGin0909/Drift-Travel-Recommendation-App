@@ -17,11 +17,12 @@ class SupabaseSessionHistoryManager:
             res = supabase.table("chat_messages")\
                 .select("role, content")\
                 .eq("session_id", self.session_id)\
-                .order("created_at", desc=False)\
+                .order("created_at", desc=True)\
+                .limit(10)\
                 .execute()
             
             langchain_history = []
-            for msg in res.data:
+            for msg in reversed(res.data):
                 if msg["role"] == "user":
                     langchain_history.append(HumanMessage(content=msg["content"]))
                 elif msg["role"] == "bot":

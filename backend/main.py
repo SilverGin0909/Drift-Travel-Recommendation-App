@@ -126,6 +126,39 @@ async def chatbot_with_drift(request: ChatRequest):
             active_session_id = str(uuid.uuid4())
             logger.info(f"Generated fresh session ID for new thread: {active_session_id}")
         
+        # 1. Identify query intent before doing anything
+        router_task = asyncio.create_task(router_chain.ainvoke({"input": request.message}))
+        route = await router_task
+
+        if route.get("intent") in ["GREETING", "OFF_TOPIC"]:
+            logger.info(f"Router identified {route.get('intent')}. Exiting early.")
+            
+            if route.get("intent") == "GREETING":
+                reply = route.get("direct_response") or "Hi there! I'm Drift. How can I help you explore KL today?"
+            else:
+                reply = "I'm Drift! I specialize in KL travel. How can I help you with your trip?"
+            
+            session_check = supabase.table("chat_sessions").select("id").eq("id", active_session_id).execute()
+            if not session_check.data:
+                logger.info(f"Registering new greeting thread {active_session_id} with placeholder title...")
+                supabase.table("chat_sessions").insert({
+                    "id": active_session_id,
+                    "user_id": request.user_id,
+                    "title": "New Chat Session"
+                }).execute()
+
+            history_manager = await get_session_history(active_session_id)
+            await history_manager.aadd_messages([
+                HumanMessage(content=request.message),
+                AIMessage(content=reply)
+            ])
+
+            async def quick_stream():
+                yield f"data: {json.dumps({'text': reply, 'session_id': active_session_id})}\n\n"
+                
+            return StreamingResponse(quick_stream(), media_type="text/event-stream")
+
+        # 2. Intent is TRAVEL_QUERY. Check if structured itinerary planner mode is active.
         if request.is_itinerary_mode:
             logger.info("Explicit Itinerary Mode triggered. Running planner agent...")
             raw_user_message = request.message
@@ -183,37 +216,6 @@ async def chatbot_with_drift(request: ChatRequest):
                 yield f"data: {json.dumps({'type': 'itinerary', 'data': itinerary_data, 'session_id': active_session_id})}\n\n"
             
             return StreamingResponse(itinerary_stream(), media_type="text/event-stream")
-
-        router_task = asyncio.create_task(router_chain.ainvoke({"input": request.message}))
-        route = await router_task
-
-        if route.get("intent") in ["GREETING", "OFF_TOPIC"]:
-            logger.info(f"Router identified {route.get('intent')}. Exiting early.")
-            
-            if route.get("intent") == "GREETING":
-                reply = route.get("direct_response") or "Hi there! I'm Drift. How can I help you explore KL today?"
-            else:
-                reply = "I'm Drift! I specialize in KL travel. How can I help you with your trip?"
-            
-            session_check = supabase.table("chat_sessions").select("id").eq("id", active_session_id).execute()
-            if not session_check.data:
-                logger.info(f"Registering new greeting thread {active_session_id} with placeholder title...")
-                supabase.table("chat_sessions").insert({
-                    "id": active_session_id,
-                    "user_id": request.user_id,
-                    "title": "New Chat Session"
-                }).execute()
-
-            history_manager = await get_session_history(active_session_id)
-            await history_manager.aadd_messages([
-                HumanMessage(content=request.message),
-                AIMessage(content=reply)
-            ])
-
-            async def quick_stream():
-                yield f"data: {json.dumps({'text': reply, 'session_id': active_session_id})}\n\n"
-                
-            return StreamingResponse(quick_stream(), media_type="text/event-stream")
 
         logger.info("Router identified TRAVEL_QUERY. Preparing main agent...")
 
@@ -314,8 +316,12 @@ async def chatbot_with_drift(request: ChatRequest):
                     user_lat=lat_val,
                     user_lng=lng_val
                 ):
-                    full_reply_chunks.append(token)
-                    yield f"data: {json.dumps({'text': token, 'session_id': active_session_id})}\n\n"
+                    if token.startswith("__STATUS:"):
+                        status_val = token.replace("__STATUS:", "").replace("__", "")
+                        yield f"data: {json.dumps({'status': status_val, 'session_id': active_session_id})}\n\n"
+                    else:
+                        full_reply_chunks.append(token)
+                        yield f"data: {json.dumps({'text': token, 'session_id': active_session_id})}\n\n"
                 
                 # Assembled full response
                 full_reply = "".join(full_reply_chunks)

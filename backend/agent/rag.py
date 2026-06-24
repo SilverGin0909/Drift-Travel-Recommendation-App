@@ -399,6 +399,15 @@ async def agent_with_manual_history(user_message: str, session_id: str, prefs_co
                 if token_text:
                     full_response += token_text
                     yield token_text
+            elif kind == "on_tool_start":
+                tool_name = event["name"]
+                if tool_name in [
+                    "kl_destinations_search",
+                    "kl_accommodations_search",
+                    "kl_events_and_festivals_search",
+                    "get_restaurant_reviews"
+                ]:
+                    yield "__STATUS:searching__"
 
     async def for_yield():
         async for token in execute_stream():

@@ -37,6 +37,7 @@ class ChatbotState extends State<Chatbot> {
   String _avatarUrl = "https://i.pravatar.cc/150?img=5";
 
   String? _currentSessionId;
+  String _thinkingText = "Thinking...";
 
   @override
   void initState() {
@@ -124,10 +125,16 @@ class ChatbotState extends State<Chatbot> {
 
     final userID = Supabase.instance.client.auth.currentUser!.id;
 
+    String initialThinking = "Thinking...";
+    if (itineraryMode) {
+      initialThinking = "Generating itinerary for user's destination...";
+    }
+
     setState(() {
       _messages.add({"role": "user", "text": text});
       _isTyping = true;
       _isSending = true;
+      _thinkingText = initialThinking;
     });
     _inputController.clear();
     _scrollToBottom();
@@ -151,6 +158,8 @@ class ChatbotState extends State<Chatbot> {
       if (response.statusCode == 200) {
         if (itineraryMode) {
           // Itinerary Mode: wait for the structured JSON response stream packet
+          int? botIndex;
+          
           await for (var line
               in response.stream
                   .transform(utf8.decoder)
@@ -167,7 +176,14 @@ class ChatbotState extends State<Chatbot> {
                 }
               }
 
-              if (data.containsKey('type') && data['type'] == 'itinerary') {
+              if (data.containsKey('status')) {
+                final String statusVal = data['status'];
+                if (statusVal == 'searching') {
+                  setState(() {
+                    _thinkingText = "Searching KL for you...";
+                  });
+                }
+              } else if (data.containsKey('type') && data['type'] == 'itinerary') {
                 final itineraryData = data['data'];
                 setState(() {
                   _isTyping = false;
@@ -197,17 +213,24 @@ class ChatbotState extends State<Chatbot> {
                       });
                 }
                 break;
+              } else if (data.containsKey('text')) {
+                setState(() {
+                  _isTyping = false;
+                  if (botIndex == null) {
+                    _messages.add({"role": "bot", "text": data['text']});
+                    botIndex = _messages.length - 1;
+                  } else {
+                    _messages[botIndex!]["text"] =
+                        _messages[botIndex!]["text"]! + data['text'];
+                  }
+                });
+                _scrollToBottom();
               }
             }
           }
         } else {
           // Standard conversational streaming mode
-          setState(() {
-            _isTyping = false;
-            _messages.add({"role": "bot", "text": ""});
-          });
-
-          int botIndex = _messages.length - 1;
+          int? botIndex;
 
           await for (var line
               in response.stream
@@ -225,10 +248,23 @@ class ChatbotState extends State<Chatbot> {
                 }
               }
 
-              if (data.containsKey('text')) {
+              if (data.containsKey('status')) {
+                final String statusVal = data['status'];
+                if (statusVal == 'searching') {
+                  setState(() {
+                    _thinkingText = "Searching KL for you...";
+                  });
+                }
+              } else if (data.containsKey('text')) {
                 setState(() {
-                  _messages[botIndex]["text"] =
-                      _messages[botIndex]["text"]! + data['text'];
+                  _isTyping = false;
+                  if (botIndex == null) {
+                    _messages.add({"role": "bot", "text": data['text']});
+                    botIndex = _messages.length - 1;
+                  } else {
+                    _messages[botIndex!]["text"] =
+                        _messages[botIndex!]["text"]! + data['text'];
+                  }
                 });
                 _scrollToBottom();
               }
@@ -382,7 +418,7 @@ class ChatbotState extends State<Chatbot> {
       itemCount: _messages.length + (_isTyping ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == _messages.length) {
-          return const ThinkingIndicator();
+          return ThinkingIndicator(text: _thinkingText);
         }
 
         final msg = _messages[index];
