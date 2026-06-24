@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:frontend/services/location_service.dart';
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -39,6 +40,195 @@ class ChatbotState extends State<Chatbot> {
 
   String? _currentSessionId;
   String _thinkingText = "Thinking...";
+  Map<String, String> _lastPreferences = {
+    "budget": "Moderate",
+    "style": "General",
+    "interests": "Sightseeing"
+  };
+
+  int _getLatestUserMessageIndex() {
+    for (int i = _messages.length - 1; i >= 0; i--) {
+      if (_messages[i]["role"] == "user") {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  void _showUserMessageActions(int messageIndex, String currentMessage, {required bool isLatest}) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 10),
+                height: 4,
+                width: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.copy_rounded, color: Colors.grey),
+                title: const Text(
+                  'Copy Message',
+                  style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w500),
+                ),
+                onTap: () async {
+                  final mainContext = this.context;
+                  Navigator.pop(context);
+                  await Clipboard.setData(ClipboardData(text: currentMessage));
+                  if (mainContext.mounted) {
+                    CustomToast.show(mainContext, "Message copied to clipboard");
+                  }
+                },
+              ),
+              if (isLatest)
+                ListTile(
+                  leading: Icon(
+                    Icons.edit_note_rounded,
+                    color: _isSending ? Colors.white24 : Colors.grey,
+                  ),
+                  title: Text(
+                    'Edit Message',
+                    style: TextStyle(
+                      color: _isSending ? Colors.white24 : Colors.grey,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  enabled: !_isSending,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showEditMessageDialog(messageIndex, currentMessage);
+                  },
+                ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showEditMessageDialog(int messageIndex, String currentMessage) async {
+    final localContext = context;
+    final textController = TextEditingController(text: currentMessage);
+    
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF161622),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Colors.white10, width: 1),
+          ),
+          title: const Text(
+            "Edit Message",
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          content: SizedBox(
+            width: MediaQuery.of(context).size.width * 0.9,
+            child: TextField(
+              controller: textController,
+              maxLines: 4,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: "Edit your query...",
+                hintStyle: const TextStyle(color: Colors.white30, fontSize: 13),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.06),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Colors.white12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFF6155F5), width: 1.5),
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text("Cancel", style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6155F5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text(
+                "Send",
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true || textController.text.trim().isEmpty) return;
+
+    final String editedQuery = textController.text.trim();
+
+    // Determine if this turn was in itinerary mode based on the subsequent bot message content
+    bool wasItineraryMode = false;
+    if (messageIndex + 1 < _messages.length) {
+      final String botText = _messages[messageIndex + 1]["text"] ?? "";
+      if (botText.trim().startsWith('{"destination":')) {
+        wasItineraryMode = true;
+      }
+    }
+
+    try {
+      if (_currentSessionId != null) {
+        // Query the latest 2 messages in Supabase to delete them
+        final res = await Supabase.instance.client
+            .from('chat_messages')
+            .select('id')
+            .eq('session_id', _currentSessionId!)
+            .order('created_at', ascending: false)
+            .limit(2);
+
+        if (res.isNotEmpty) {
+          final List<dynamic> idsToDelete = res.map((msg) => msg['id'] as String).toList();
+          await Supabase.instance.client
+              .from('chat_messages')
+              .delete()
+              .inFilter('id', idsToDelete);
+        }
+      }
+
+      // Update local state by removing the latest user and all subsequent messages
+      setState(() {
+        if (messageIndex >= 0 && messageIndex < _messages.length) {
+          _messages.removeRange(messageIndex, _messages.length);
+        }
+      });
+
+      _handleSend(editedQuery, _lastPreferences, wasItineraryMode);
+
+    } catch (e) {
+      debugPrint("Error editing query: $e");
+      if (localContext.mounted) {
+        CustomToast.show(localContext, "Failed to edit query: $e");
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -126,6 +316,8 @@ class ChatbotState extends State<Chatbot> {
     if (itineraryMode) {
       initialThinking = "Generating itinerary for user's destination...";
     }
+
+    _lastPreferences = preferences;
 
     setState(() {
       _messages.add({"role": "user", "text": text});
@@ -422,7 +614,15 @@ class ChatbotState extends State<Chatbot> {
         final isUser = msg["role"] == "user";
 
         if (isUser) {
-          return UserMessageBubble(text: msg["text"] ?? "");
+          final int latestUserIndex = _getLatestUserMessageIndex();
+          final bool isLatest = index == latestUserIndex;
+          
+          return GestureDetector(
+            onLongPress: () {
+              _showUserMessageActions(index, msg["text"] ?? "", isLatest: isLatest);
+            },
+            child: UserMessageBubble(text: msg["text"] ?? ""),
+          );
         }
 
         final text = msg["text"] ?? "";
