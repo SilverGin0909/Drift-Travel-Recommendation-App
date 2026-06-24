@@ -3,7 +3,7 @@ import 'dart:convert';
 
 class ApiService {
   static const String baseUrl =
-      "https://drift-travel-recommendation-app.onrender.com"; // OR "http://192.168.0.7:8000/api/chat"
+      "https://drift-travel-recommendation-app.onrender.com"; // OR "http://192.168.0.12:8000"
   static Future<http.StreamedResponse> sendChatMessage({
     required String userID,
     required String? sessionId,

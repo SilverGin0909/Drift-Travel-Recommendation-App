@@ -107,7 +107,17 @@ async def update_session_title_from_response(session_id: str, ai_response: str):
                     f"Title: "
                 )
                 summary_res = await llm.ainvoke(summary_prompt)
-                smart_title = summary_res.content.strip().strip('"').strip("'").strip()
+                content = summary_res.content
+                if isinstance(content, list):
+                    text_content = ""
+                    for item in content:
+                        if isinstance(item, dict) and "text" in item:
+                            text_content += item["text"]
+                        elif isinstance(item, str):
+                            text_content += item
+                else:
+                    text_content = str(content)
+                smart_title = text_content.strip().strip('"').strip("'").strip()
                 
                 # Truncate just in case
                 if len(smart_title) > 40:

@@ -18,7 +18,7 @@ class SupabaseSessionHistoryManager:
                 .select("role, content")\
                 .eq("session_id", self.session_id)\
                 .order("created_at", desc=True)\
-                .limit(10)\
+                .limit(3)\
                 .execute()
             
             langchain_history = []
