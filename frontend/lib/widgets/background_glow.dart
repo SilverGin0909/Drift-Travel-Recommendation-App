@@ -162,11 +162,11 @@ class OriginalGlowPainter extends CustomPainter {
     final double opFactor3 = 1.0 - m + m * (0.40 + math.sin(phase * 0.8 + 1.0).abs() * 0.60);
     final double opFactor4 = 1.0 - m + m * (0.50 + math.cos(phase * 1.4 + 0.5).abs() * 0.50);
 
-    // Opacity values multiplied by breathing factors
-    final double alpha1 = 0.20 * opFactor1;
-    final double alpha2 = 0.15 * opFactor2;
-    final double alpha3 = 0.80 * opFactor3;
-    final double alpha4 = 0.25 * opFactor4;
+    // Opacity values multiplied by breathing factors (with enhanced opacity during thinking)
+    final double alpha1 = (0.20 + m * 0.25) * opFactor1;
+    final double alpha2 = (0.15 + m * 0.25) * opFactor2;
+    final double alpha3 = (0.80 + m * 0.15) * opFactor3;
+    final double alpha4 = (0.25 + m * 0.25) * opFactor4;
 
     // Drift movements: at m=0.0 they resolve to 0.0, at m=1.0 they fully oscillate
     final double dx1 = m * math.sin(phase * 0.8) * 15.0;

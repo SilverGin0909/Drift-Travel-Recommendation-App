@@ -17,6 +17,7 @@ import 'package:frontend/services/api_service.dart';
 import 'package:frontend/services/user_service.dart';
 import 'package:frontend/widgets/chat_bubbles.dart';
 import 'package:frontend/screens/itinerary_viewer.dart';
+import 'package:frontend/widgets/custom_toast.dart';
 
 class Chatbot extends StatefulWidget {
   const Chatbot({super.key});
@@ -102,16 +103,12 @@ class ChatbotState extends State<Chatbot> {
         setState(() {
           _avatarUrl = publicUrl;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Profile picture updated!")),
-        );
+        CustomToast.show(context, "Profile picture updated!");
       }
     } catch (e) {
       debugPrint("Error uploading image: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to update picture.")),
-        );
+        CustomToast.show(context, "Failed to update picture.");
       }
     }
   }

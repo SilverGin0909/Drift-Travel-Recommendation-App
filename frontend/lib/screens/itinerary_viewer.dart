@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:frontend/services/api_service.dart';
+import 'package:frontend/widgets/custom_toast.dart';
 
 class ItineraryViewer extends StatefulWidget {
   final Map<String, dynamic> itinerary;
@@ -165,12 +166,7 @@ class _ItineraryViewerState extends State<ItineraryViewer> {
 
       if (response.statusCode == 200) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Itinerary changes saved successfully!"),
-              backgroundColor: Colors.green,
-            ),
-          );
+          CustomToast.show(context, "Itinerary changes saved successfully!");
           Navigator.of(context).pop(true); // Return true to indicate change
         }
       } else {
@@ -178,12 +174,7 @@ class _ItineraryViewerState extends State<ItineraryViewer> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Failed to save changes: $e"),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+        CustomToast.show(context, "Failed to save changes: $e");
       }
     } finally {
       if (mounted) {

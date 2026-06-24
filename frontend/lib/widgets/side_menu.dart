@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend/screens/login.dart';
+import 'package:frontend/widgets/custom_toast.dart';
 
 class SideMenu extends StatefulWidget {
   final String? currentSessionId;
@@ -302,6 +303,222 @@ class _SideMenuState extends State<SideMenu> {
     );
   }
 
+  Future<void> _deleteSession(String sessionId) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF161622),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Colors.white10, width: 1),
+          ),
+          title: const Text(
+            "Delete Trip Itinerary",
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          content: const Text(
+            "Are you sure you want to permanently delete this trip and its chat history?",
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text("Cancel", style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text(
+                "Delete",
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true) return;
+
+    try {
+      // Delete messages first to handle schemas without cascade delete
+      await Supabase.instance.client
+          .from('chat_messages')
+          .delete()
+          .eq('session_id', sessionId);
+
+      // Delete the session
+      await Supabase.instance.client
+          .from('chat_sessions')
+          .delete()
+          .eq('id', sessionId);
+
+      // Update UI state
+      setState(() {
+        _allSessions.removeWhere((session) => session['id'] == sessionId);
+        _filteredSessions = _allSessions;
+      });
+
+      // If the deleted session was the active one, clear chat
+      if (sessionId == widget.currentSessionId) {
+        widget.onNewSessionCreated();
+      }
+
+      if (mounted) {
+        CustomToast.show(context, "Trip deleted successfully");
+      }
+    } catch (e) {
+      debugPrint("Error deleting session: $e");
+      if (mounted) {
+        CustomToast.show(context, "Failed to delete trip: $e");
+      }
+    }
+  }
+
+  Future<void> _renameSession(String sessionId, String currentTitle) async {
+    final textController = TextEditingController(text: currentTitle);
+    
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF161622),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Colors.white10, width: 1),
+          ),
+          title: const Text(
+            "Rename Trip",
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          content: TextField(
+            controller: textController,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: "Enter new title...",
+              hintStyle: const TextStyle(color: Colors.white30, fontSize: 13),
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.06),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.white12),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF6155F5), width: 1.5),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text("Cancel", style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6155F5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text(
+                "Save",
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true || textController.text.trim().isEmpty) return;
+
+    final String newTitle = textController.text.trim();
+
+    try {
+      await Supabase.instance.client
+          .from('chat_sessions')
+          .update({'title': newTitle})
+          .eq('id', sessionId);
+
+      setState(() {
+        final index = _allSessions.indexWhere((session) => session['id'] == sessionId);
+        if (index != -1) {
+          _allSessions[index]['title'] = newTitle;
+        }
+        _filteredSessions = _allSessions;
+      });
+
+      if (mounted) {
+        CustomToast.show(context, "Trip renamed successfully");
+      }
+    } catch (e) {
+      debugPrint("Error renaming session: $e");
+      if (mounted) {
+        CustomToast.show(context, "Failed to rename trip: $e");
+      }
+    }
+  }
+
+  void _showActionBottomSheet(String sessionId, String title) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black, // Black background color
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Pull indicator bar
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 10),
+                height: 4,
+                width: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined, color: Colors.grey),
+                title: const Text(
+                  'Rename Trip',
+                  style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w500),
+                ),
+                onTap: () {
+                  Navigator.pop(context); // Close bottom sheet
+                  _renameSession(sessionId, title);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded, color: Colors.grey),
+                title: const Text(
+                  'Delete Trip',
+                  style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w500),
+                ),
+                onTap: () {
+                  Navigator.pop(context); // Close bottom sheet
+                  _deleteSession(sessionId);
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildHistoryItem(
     String sessionId,
     String title, {
@@ -336,6 +553,9 @@ class _SideMenuState extends State<SideMenu> {
         onTap: () {
           widget.onSessionSelected(sessionId);
           Navigator.pop(context);
+        },
+        onLongPress: () {
+          _showActionBottomSheet(sessionId, title);
         },
       ),
     );
