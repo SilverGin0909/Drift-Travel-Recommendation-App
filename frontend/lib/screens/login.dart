@@ -18,6 +18,7 @@ class _LoginPageState extends State<LoginPage> {
   String? loginError;
 
   bool _rememberMe = false;
+  bool _obscurePassword = true;
 
   @override
   void initState() {
@@ -127,7 +128,7 @@ class _LoginPageState extends State<LoginPage> {
 
                 TextField(
                   controller: password,
-                  obscureText: true,
+                  obscureText: _obscurePassword,
                   decoration: InputDecoration(
                     hintText: 'Enter your password',
                     hintStyle: GoogleFonts.poppins(
@@ -137,6 +138,30 @@ class _LoginPageState extends State<LoginPage> {
                     contentPadding: const EdgeInsets.symmetric(
                       vertical: 8,
                       horizontal: 12,
+                    ),
+                    suffixIcon: Listener(
+                      onPointerDown: (_) {
+                        setState(() {
+                          _obscurePassword = false;
+                        });
+                      },
+                      onPointerUp: (_) {
+                        setState(() {
+                          _obscurePassword = true;
+                        });
+                      },
+                      onPointerCancel: (_) {
+                        setState(() {
+                          _obscurePassword = true;
+                        });
+                      },
+                      child: IconButton(
+                        icon: Icon(
+                          _obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                          color: const Color(0x90000000),
+                        ),
+                        onPressed: () {},
+                      ),
                     ),
                     filled: true,
                     fillColor: Colors.white,

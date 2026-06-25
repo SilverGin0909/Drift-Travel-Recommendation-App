@@ -16,6 +16,7 @@ class _SignupPageState extends State<SignupPage> {
   final TextEditingController username = TextEditingController();
   final TextEditingController email = TextEditingController();
   final TextEditingController password = TextEditingController();
+  bool _obscurePassword = true;
 
   @override
   Widget build(BuildContext context) {
@@ -107,7 +108,7 @@ class _SignupPageState extends State<SignupPage> {
 
                 TextField(
                   controller: password,
-                  obscureText: true,
+                  obscureText: _obscurePassword,
                   decoration: InputDecoration(
                     hintText: 'Enter your password',
                     hintStyle: GoogleFonts.poppins(
@@ -117,6 +118,30 @@ class _SignupPageState extends State<SignupPage> {
                     contentPadding: const EdgeInsets.symmetric(
                       vertical: 8,
                       horizontal: 12,
+                    ),
+                    suffixIcon: Listener(
+                      onPointerDown: (_) {
+                        setState(() {
+                          _obscurePassword = false;
+                        });
+                      },
+                      onPointerUp: (_) {
+                        setState(() {
+                          _obscurePassword = true;
+                        });
+                      },
+                      onPointerCancel: (_) {
+                        setState(() {
+                          _obscurePassword = true;
+                        });
+                      },
+                      child: IconButton(
+                        icon: Icon(
+                          _obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                          color: const Color(0x90000000),
+                        ),
+                        onPressed: () {},
+                      ),
                     ),
                     filled: true,
                     fillColor: Colors.white,
@@ -257,6 +282,11 @@ class _SignupPageState extends State<SignupPage> {
 
     if (!passwordText.contains(RegExp(r'[^a-zA-Z0-9]'))) {
       CustomToast.show(context, "Password must contain at least one symbol");
+      return;
+    }
+
+    if (!passwordText.contains(RegExp(r'[0-9]'))) {
+      CustomToast.show(context, "Password must contain at least one number");
       return;
     }
 

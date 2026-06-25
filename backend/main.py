@@ -140,10 +140,12 @@ async def chatbot_with_drift(request: ChatRequest):
         router_task = asyncio.create_task(router_chain.ainvoke({"input": request.message}))
         route = await router_task
 
-        if route.get("intent") in ["GREETING", "OFF_TOPIC"]:
+        if route.get("intent") in ["GREETING", "OFF_TOPIC", "HATE_SPEECH"]:
             logger.info(f"Router identified {route.get('intent')}. Exiting early.")
             
-            if route.get("intent") == "GREETING":
+            if route.get("intent") == "HATE_SPEECH":
+                reply = route.get("direct_response") or "I cannot fulfill this request. I am programmed to be a helpful and harmless travel assistant, and I will not engage with or generate racist, discriminatory, or hateful content."
+            elif route.get("intent") == "GREETING":
                 reply = route.get("direct_response") or "Hi there! I'm Drift. How can I help you explore KL today?"
             else:
                 reply = "I'm Drift! I specialize in KL travel. How can I help you with your trip?"
