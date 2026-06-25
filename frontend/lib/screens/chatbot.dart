@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:image_picker/image_picker.dart';
 
@@ -44,6 +45,7 @@ class ChatbotState extends State<Chatbot> {
 
   StreamSubscription<String>? _chatStreamSubscription;
   Completer<void>? _streamCompleter;
+  http.Client? _activeHttpClient;
 
   Map<String, String> _lastPreferences = {
     "budget": "Moderate",
@@ -313,6 +315,10 @@ class ChatbotState extends State<Chatbot> {
       _chatStreamSubscription!.cancel();
       _chatStreamSubscription = null;
     }
+    if (_activeHttpClient != null) {
+      _activeHttpClient!.close();
+      _activeHttpClient = null;
+    }
     if (_streamCompleter != null && !_streamCompleter!.isCompleted) {
       _streamCompleter!.complete();
       _streamCompleter = null;
@@ -354,7 +360,9 @@ class ChatbotState extends State<Chatbot> {
       final String formattedPrefs =
           "Budget: ${preferences['budget']}, Style: ${preferences['style']}, Interests: ${preferences['interests']}";
 
+      _activeHttpClient = http.Client();
       final response = await ApiService.sendChatMessage(
+        client: _activeHttpClient!,
         userID: userID,
         sessionId: _currentSessionId,
         text: text,
@@ -516,6 +524,12 @@ class ChatbotState extends State<Chatbot> {
       } else {
         throw Exception("Server error: ${response.statusCode}");
       }
+      _activeHttpClient?.close();
+      _activeHttpClient = null;
+      setState(() {
+        _isTyping = false;
+        _isSending = false;
+      });
     } catch (e) {
       debugPrint("Stream Error: $e");
       setState(() {
