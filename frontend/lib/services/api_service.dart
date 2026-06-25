@@ -1,9 +1,11 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiService {
-  static const String baseUrl =
-      "https://drift-travel-recommendation-app.onrender.com"; // OR "http://192.168.0.7:8000"
+  static final String baseUrl =
+      dotenv.env['BACKEND_URL'] ??
+      "https://drift-travel-recommendation-app.onrender.com";
   static Future<http.StreamedResponse> sendChatMessage({
     required String userID,
     required String? sessionId,
